@@ -100,7 +100,18 @@ class پنجره_داشبورد(QWidget):
             admin_loan_subtabs = ["همه وام‌ها", "خریداران وام"]
             for t in admin_loan_subtabs:
                 child = QTreeWidgetItem([t]); loans_root.addChild(child)
-                self._page_index_map[t] = add_placeholder(t)
+                if t == "همه وام‌ها":
+                    # Real page for All Loans
+                    from client.views.loans_view import LoansView as _LoansView
+                    page = _LoansView()
+                    self._page_index_map[t] = self.content_stack.addWidget(page)
+                elif t == "خریداران وام":
+                    # Real page for Loan Buyers
+                    from client.views.buyers_view import BuyersView as _BuyersView
+                    page = _BuyersView()
+                    self._page_index_map[t] = self.content_stack.addWidget(page)
+                else:
+                    self._page_index_map[t] = add_placeholder(t)
             # Other admin tabs
             emp_mgmt_item = QTreeWidgetItem(["مدیریت کارمندان"]); root_admin.addChild(emp_mgmt_item)
             self._page_index_map["مدیریت کارمندان"] = self.content_stack.addWidget(self._build_admin_users_tab())

@@ -108,3 +108,12 @@ def update_loan(loan_id: int, data: Dict[str, Any]):
     conn.commit()
     cur.close()
     conn.close()
+
+
+def delete_loan(loan_id: int):
+    conn = get_connection(True)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM loans WHERE id=%s", (loan_id,))
+    conn.commit()
+    cur.close()
+    conn.close()

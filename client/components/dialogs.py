@@ -2,12 +2,14 @@
 from typing import Dict, Any, Optional
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit, QComboBox, QTextEdit,
-    QDoubleSpinBox, QDialogButtonBox, QLabel, QMessageBox, QAbstractSpinBox
+    QDoubleSpinBox, QDialogButtonBox, QLabel, QMessageBox, QAbstractSpinBox,
+    QWidget, QHBoxLayout
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QLocale
 
 # Local API client (injects token)
 from ..services import api_client
+from ..utils.styles import style_dialog_buttons
 
 API_EMP_META = "http://127.0.0.1:5000/api/employees/meta"
 API_EMP = "http://127.0.0.1:5000/api/employees"
@@ -63,9 +65,10 @@ class EmployeeAddDialog(QDialog):
         self.in_address = QTextEdit(); self.in_address.setPlaceholderText("مثال: تهران، خیابان اصلی، پلاک ۱۲۳")
 
         self.in_salary = QDoubleSpinBox(); self.in_salary.setRange(0, 10_000_000_000); self.in_salary.setDecimals(0)
-        # Remove spin buttons and align neatly
+        # Remove spin buttons, add thousand separators, align right
+        self.in_salary.setLocale(QLocale(QLocale.English))
         self.in_salary.setButtonSymbols(QAbstractSpinBox.NoButtons)
-        self.in_salary.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.in_salary.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.in_salary.setStyleSheet("QDoubleSpinBox{padding:6px 8px;}")
         self.cb_status = QComboBox(); self.cb_status.addItems(["فعال", "غیرفعال"]) 
 
@@ -83,6 +86,7 @@ class EmployeeAddDialog(QDialog):
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Save)
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self._submit)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -143,9 +147,10 @@ class EmployeeEditDialog(QDialog):
         self.in_phone = QLineEdit(self._item.get("phone", ""))
         self.in_address = QTextEdit(self._item.get("address", ""))
         self.in_salary = QDoubleSpinBox(); self.in_salary.setRange(0, 10_000_000_000); self.in_salary.setDecimals(0)
-        # Remove spin buttons and align neatly
+        # Remove spin buttons, add thousand separators, align right
+        self.in_salary.setLocale(QLocale(QLocale.English))
         self.in_salary.setButtonSymbols(QAbstractSpinBox.NoButtons)
-        self.in_salary.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.in_salary.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.in_salary.setStyleSheet("QDoubleSpinBox{padding:6px 8px;}")
         try:
             self.in_salary.setValue(float(self._item.get("monthly_salary") or 0))
@@ -173,6 +178,7 @@ class EmployeeEditDialog(QDialog):
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Save)
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self._submit)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -231,24 +237,23 @@ class EmployeeViewDialog(QDialog):
         form.setHorizontalSpacing(18); form.setVerticalSpacing(10)
 
         def add_row(label_fa: str, value: str, label_en: Optional[str] = None, selectable: bool = True):
-            # Persian label (bold) + English label (muted) combined
-            fa = QLabel(label_fa)
-            fa.setStyleSheet("font-weight:600; color:#212529;")
+            # RTL row: label (with colon) + optional EN note + value; all RTL-aligned
+            row = QWidget(); hl = QHBoxLayout(row); hl.setContentsMargins(0,0,0,0); hl.setSpacing(8)
+            lbl_text = label_fa + ":"
             if label_en:
-                en = QLabel(label_en)
-                en.setStyleSheet("color:#6c757d; font-size:11px;")
-                title = QLabel()
-                title.setText(f"{fa.text()}  |  <span style='color:#6c757d;font-size:11px'>{en.text()}</span>")
-                title.setTextFormat(Qt.RichText)
-                title.setStyleSheet("font-weight:600;")
-                label_widget = title
-            else:
-                label_widget = fa
+                lbl_text = lbl_text + f"  |  <span style='color:#6c757d;font-size:11px'>{label_en}</span>"
+            lbl = QLabel(lbl_text); lbl.setTextFormat(Qt.RichText)
+            lbl.setStyleSheet("font-weight:600; color:#212529;")
             val = QLabel(value or "-")
             if selectable:
                 val.setTextInteractionFlags(Qt.TextSelectableByMouse)
             val.setWordWrap(True)
-            form.addRow(label_widget, val)
+            lbl.setLayoutDirection(Qt.RightToLeft)
+            val.setLayoutDirection(Qt.RightToLeft)
+            val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            hl.addWidget(lbl, 0)
+            hl.addWidget(val, 1)
+            form.addRow(row)
 
         add_row("شناسه", str(self._item.get("id", "")), "ID")
         add_row("نام و نام خانوادگی", self._item.get("full_name", ""), "Full Name")
@@ -263,6 +268,7 @@ class EmployeeViewDialog(QDialog):
 
         layout.addLayout(form)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        style_dialog_buttons(buttons)
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
