@@ -91,6 +91,13 @@ class BranchesView(QWidget):
         desc.setStyleSheet("color:#6c757d;margin-bottom:6px;")
         layout.addWidget(title); layout.addWidget(desc)
 
+        # Connect to global signals for auto-refresh
+        try:
+            from ..main import global_signals
+            global_signals.employee_updated.connect(self._load)
+        except Exception:
+            pass
+
         # Top bar: Add + Refresh (right aligned, consistent style)
         bar = QHBoxLayout(); bar.setSpacing(8)
         btn_add = QPushButton("افزودن شعبه")

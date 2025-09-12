@@ -35,8 +35,14 @@ from PySide6.QtWidgets import (
     QSpacerItem,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtGui import QFontDatabase, QFont
+
+# Global signals for inter-component communication
+class GlobalSignals(QObject):
+    employee_updated = Signal()
+    
+global_signals = GlobalSignals()
 
 API_LOGIN = "http://127.0.0.1:5000/api/auth/login"
 API_EMP_META = "http://127.0.0.1:5000/api/employees/meta"
@@ -193,17 +199,13 @@ class پنجره_داشبورد(QWidget):
         # Search + Filters bar (top)
         filters_bar = QHBoxLayout(); filters_bar.setSpacing(8)
         self.search_input = QLineEdit(); self.search_input.setPlaceholderText("جستجو نام/نام خانوادگی")
-        self.filter_department = QComboBox(); self.filter_department.setMinimumWidth(180)
         self.filter_branch = QComboBox(); self.filter_branch.setMinimumWidth(160)
         # Default options
-        self.filter_department.addItem("همه دپارتمان‌ها", -1)
         self.filter_branch.addItem("همه شعب", -1)
         # Wire up live filtering
         self.search_input.textChanged.connect(self._apply_filters)
-        self.filter_department.currentIndexChanged.connect(self._apply_filters)
         self.filter_branch.currentIndexChanged.connect(self._apply_filters)
         filters_bar.addWidget(self.search_input)
-        filters_bar.addWidget(self.filter_department)
         filters_bar.addWidget(self.filter_branch)
         layout.addLayout(filters_bar)
 
@@ -261,11 +263,8 @@ class پنجره_داشبورد(QWidget):
             self.lbl_status.setText("بارگذاری اطلاعات دپارتمان/شعبه ناموفق بود.")
             return
         # Populate top filters
-        self.filter_department.clear(); self.filter_branch.clear()
-        self.filter_department.addItem("همه دپارتمان‌ها", -1)
+        self.filter_branch.clear()
         self.filter_branch.addItem("همه شعب", -1)
-        for d in data.get("departments", []):
-            self.filter_department.addItem(d.get("name", ""), d.get("id"))
         for b in data.get("branches", []):
             self.filter_branch.addItem(b.get("name", ""), b.get("id"))
 
@@ -299,18 +298,14 @@ class پنجره_داشبورد(QWidget):
             self._load_users()
 
     def _apply_filters(self):
-        """Apply search text + department/branch filters client-side."""
+        """Apply search text + branch filters client-side."""
         txt = (self.search_input.text() or "").strip().lower()
-        dep_id = self.filter_department.currentData()
         br_id = self.filter_branch.currentData()
         def match(item):
             # name filtering: accepts first/last name parts in full_name
             if txt:
                 name = (item.get("full_name") or "").lower()
                 if txt not in name:
-                    return False
-            if dep_id not in (None, -1):
-                if item.get("department_id") != dep_id:
                     return False
             if br_id not in (None, -1):
                 if item.get("branch_id") != br_id:
@@ -353,6 +348,8 @@ class پنجره_داشبورد(QWidget):
         dlg = EmployeeEditDialog(int(emp_id), self)
         if dlg.exec():
             self._load_users()
+            # Emit signal to refresh other views
+            global_signals.employee_updated.emit()
 
     def _delete_employee(self, emp_id: int):
         from client.components.dialogs import delete_employee_with_confirm
@@ -367,7 +364,6 @@ class پنجره_داشبورد(QWidget):
             "national_id": self.in_national_id.text().strip(),
             "password": self.in_password.text().strip(),
             "role": self.in_role.text().strip(),
-            "department_id": self.cb_department.currentData(),
             "branch_id": self.cb_branch.currentData(),
             "phone": self.in_phone.text().strip(),
             "address": self.in_address.toPlainText().strip(),

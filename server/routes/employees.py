@@ -4,7 +4,6 @@ from flask import Blueprint, request, jsonify
 from models.employee import (
     ensure_employee_schema,
     create_employee,
-    get_departments,
     get_branches,
 )
 from utils.auth import require_roles
@@ -17,10 +16,9 @@ bp_employees = Blueprint("employees", __name__, url_prefix="/api/employees")
 @bp_employees.get("/meta")
 @require_roles("admin")
 def employees_meta():
-    """Return departments and branches for dropdowns."""
-    deps = get_departments()
+    """Return branches for dropdowns."""
     brs = get_branches()
-    return jsonify({"departments": deps, "branches": brs})
+    return jsonify({"branches": brs})
 
 
 @bp_employees.get("")
@@ -29,8 +27,8 @@ def employees_list():
     from database import get_connection
     conn = get_connection(True)
     cur = conn.cursor()
-    # Include department_id and branch_id for client-side filtering
-    cur.execute("SELECT id, full_name, national_id, role, status, department_id, branch_id FROM employees ORDER BY id DESC")
+    # Include branch_id for client-side filtering
+    cur.execute("SELECT id, full_name, national_id, role, status, branch_id FROM employees ORDER BY id DESC")
     rows = cur.fetchall()
     cur.close(); conn.close()
     items = [
@@ -40,8 +38,7 @@ def employees_list():
             "national_id": r[2],
             "role": r[3],
             "status": r[4],
-            "department_id": r[5],
-            "branch_id": r[6],
+            "branch_id": r[5],
         }
         for r in rows
     ]
@@ -73,7 +70,7 @@ def employees_get(emp_id: int):
     # Return complete details for view dialog
     cur.execute(
         """
-        SELECT id, full_name, national_id, role, status, department_id, branch_id, phone, address, monthly_salary
+        SELECT id, full_name, national_id, role, status, branch_id, phone, address, monthly_salary
         FROM employees WHERE id=%s
         """,
         (emp_id,)
@@ -90,11 +87,10 @@ def employees_get(emp_id: int):
             "national_id": row[2],
             "role": row[3],
             "status": row[4],
-            "department_id": row[5],
-            "branch_id": row[6],
-            "phone": row[7],
-            "address": row[8],
-            "monthly_salary": float(row[9]) if row[9] is not None else 0,
+            "branch_id": row[5],
+            "phone": row[6],
+            "address": row[7],
+            "monthly_salary": float(row[8]) if row[8] is not None else 0,
         }
     })
 
@@ -112,7 +108,7 @@ def employees_update(emp_id: int):
             # leave as-is if bcrypt not available
             pass
 
-    allowed = ["full_name", "national_id", "password", "role", "status"]
+    allowed = ["full_name", "national_id", "password", "role", "status", "branch_id", "phone", "address", "monthly_salary"]
     fields, values = [], []
     for k in allowed:
         if k in data:

@@ -19,7 +19,7 @@ def _load_meta() -> Dict[str, Any]:
     r = api_client.get(API_EMP_META)
     data = r.json()
     # Support both plain payload (no status) and wrapped success payloads
-    if isinstance(data, dict) and ("departments" in data or "branches" in data):
+    if isinstance(data, dict) and "branches" in data:
         return data
     if data.get("status") == "success":
         return data
@@ -54,9 +54,6 @@ class EmployeeAddDialog(QDialog):
         self.in_password = QLineEdit(); self.in_password.setEchoMode(QLineEdit.Password); self.in_password.setPlaceholderText("رمز عبور")
         self.in_role = QLineEdit(); self.in_role.setPlaceholderText("مثال: کارشناس وام")
 
-        self.cb_department = QComboBox()
-        for d in self._meta.get("departments", []):
-            self.cb_department.addItem(d.get("name", ""), d.get("id"))
         self.cb_branch = QComboBox()
         # Populate branches dynamically from server meta
         for b in self._meta.get("branches", []):
@@ -77,7 +74,6 @@ class EmployeeAddDialog(QDialog):
         form.addRow("کد ملی (نام کاربری)", self.in_national_id)
         form.addRow("رمز عبور", self.in_password)
         form.addRow("نقش", self.in_role)
-        form.addRow("دپارتمان", self.cb_department)
         form.addRow("شعبه", self.cb_branch)
         form.addRow("شماره تماس", self.in_phone)
         form.addRow("آدرس", self.in_address)
@@ -98,7 +94,6 @@ class EmployeeAddDialog(QDialog):
             "national_id": self.in_national_id.text().strip(),
             "password": self.in_password.text().strip(),
             "role": self.in_role.text().strip(),
-            "department_id": self.cb_department.currentData(),
             "branch_id": self.cb_branch.currentData(),
             "phone": self.in_phone.text().strip(),
             "address": self.in_address.toPlainText().strip(),
@@ -132,12 +127,6 @@ class EmployeeEditDialog(QDialog):
 
         self.in_full_name = QLineEdit(self._item.get("full_name", ""))
         self.in_role = QLineEdit(self._item.get("role", ""))
-        self.cb_department = QComboBox();
-        for d in self._meta.get("departments", []):
-            self.cb_department.addItem(d.get("name", ""), d.get("id"))
-        if self._item.get("department_id") is not None:
-            idx = self.cb_department.findData(self._item.get("department_id"));
-            if idx >= 0: self.cb_department.setCurrentIndex(idx)
         self.cb_branch = QComboBox();
         # Populate branches dynamically from server meta
         for b in self._meta.get("branches", []):
@@ -169,7 +158,6 @@ class EmployeeEditDialog(QDialog):
 
         form.addRow("نام و نام خانوادگی", self.in_full_name)
         form.addRow("نقش", self.in_role)
-        form.addRow("دپارتمان", self.cb_department)
         form.addRow("شعبه", self.cb_branch)
         form.addRow("شماره تماس", self.in_phone)
         form.addRow("آدرس", self.in_address)
@@ -189,7 +177,6 @@ class EmployeeEditDialog(QDialog):
         payload: Dict[str, Any] = {
             "full_name": self.in_full_name.text().strip(),
             "role": self.in_role.text().strip(),
-            "department_id": self.cb_department.currentData(),
             "branch_id": self.cb_branch.currentData(),
             "phone": self.in_phone.text().strip(),
             "address": self.in_address.toPlainText().strip(),
@@ -222,10 +209,8 @@ class EmployeeViewDialog(QDialog):
         try:
             self._meta = _load_meta()
         except Exception:
-            self._meta = {"departments": [], "branches": []}
-        dep_map = {d.get("id"): d.get("name", "-") for d in self._meta.get("departments", [])}
+            self._meta = {"branches": []}
         br_map = {b.get("id"): b.get("name", "-") for b in self._meta.get("branches", [])}
-        dep_name = dep_map.get(self._item.get("department_id")) or "-"
         br_name = br_map.get(self._item.get("branch_id")) or "-"
         # Format salary nicely
         try:
@@ -261,7 +246,6 @@ class EmployeeViewDialog(QDialog):
         add_row("نام و نام خانوادگی", self._item.get("full_name", ""), "Full Name")
         add_row("کدملی", self._item.get("national_id", ""), "National ID")
         add_row("نقش", self._item.get("role", ""), "Role")
-        add_row("دپارتمان", dep_name, "Department")
         add_row("شعبه", br_name, "Branch")
         add_row("شماره تماس", self._item.get("phone", ""), "Phone")
         add_row("آدرس", self._item.get("address", ""), "Address")
