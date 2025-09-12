@@ -28,9 +28,11 @@ status_to_index = {k: i for i, (k, _) in enumerate(STATUS_OPTIONS)}
 def _load_loans() -> List[Dict[str, Any]]:
     try:
         r = api_client.get(API_LOANS)
-        data = r.json()
+        data = api_client.parse_json(r)
         if data.get("status") == "success":
-            return data.get("items", [])
+            items = data.get("items", [])
+            # Only show loans with status available
+            return [it for it in items if (it.get("loan_status") or "").lower() == "available"]
     except Exception:
         pass
     return []

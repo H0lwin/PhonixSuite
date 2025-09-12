@@ -117,8 +117,9 @@ def update_loan_buyer(buyer_id: int, data: Dict[str, Any]):
                 row = cur.fetchone()
                 loan_id = row[0] if row else None
                 if loan_id:
-                    from models.loan import update_loan
-                    update_loan(loan_id, {"loan_status": "purchased"})
+                    # Use service to apply side effects (auto-creates creditor)
+                    from services.loan_service import update_loan_with_side_effects
+                    update_loan_with_side_effects(loan_id, {"loan_status": "purchased"})
             except Exception:
                 pass
     conn.commit()

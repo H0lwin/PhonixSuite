@@ -58,6 +58,7 @@ class EmployeeAddDialog(QDialog):
         for d in self._meta.get("departments", []):
             self.cb_department.addItem(d.get("name", ""), d.get("id"))
         self.cb_branch = QComboBox()
+        # Populate branches dynamically from server meta
         for b in self._meta.get("branches", []):
             self.cb_branch.addItem(b.get("name", ""), b.get("id"))
 
@@ -138,6 +139,7 @@ class EmployeeEditDialog(QDialog):
             idx = self.cb_department.findData(self._item.get("department_id"));
             if idx >= 0: self.cb_department.setCurrentIndex(idx)
         self.cb_branch = QComboBox();
+        # Populate branches dynamically from server meta
         for b in self._meta.get("branches", []):
             self.cb_branch.addItem(b.get("name", ""), b.get("id"))
         if self._item.get("branch_id") is not None:

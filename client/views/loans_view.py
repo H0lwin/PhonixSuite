@@ -11,6 +11,7 @@ from ..services import api_client
 from ..components.loan_dialogs import (
     LoanAddDialog, LoanEditDialog, LoanViewDialog, delete_loan_with_confirm
 )
+from ..utils.i18n import t_status
 
 API_LOANS = "http://127.0.0.1:5000/api/loans"
 
@@ -22,6 +23,11 @@ class LoansView(QWidget):
 
         # Tabs: Active Loans and Loan History
         self.tabs = QTabWidget()
+        self.tabs.setStyleSheet(
+            "QTabBar::tab{background:#f1f3f5;color:#212529;padding:6px 12px;border:1px solid #dee2e6;border-top-left-radius:6px;border-top-right-radius:6px;}"
+            " QTabBar::tab:selected{background:#0d6efd;color:white;border-color:#0d6efd;}"
+            " QTabWidget::pane{border:1px solid #dee2e6; top:-1px;}"
+        )
         self.tab_active = QWidget(); active_layout = QVBoxLayout(); active_layout.setSpacing(12); self.tab_active.setLayout(active_layout)
         self.tab_history = QWidget(); history_layout = QVBoxLayout(); history_layout.setSpacing(12); self.tab_history.setLayout(history_layout)
         self.tabs.addTab(self.tab_active, "وام‌های فعال")
@@ -151,7 +157,7 @@ class LoansView(QWidget):
     def _load_loans(self):
         try:
             r = api_client.get(API_LOANS)
-            data = r.json()
+            data = api_client.parse_json(r)
         except Exception:
             self.lbl_status.setText("بارگذاری لیست وام‌ها ناموفق بود.")
             return
@@ -216,7 +222,7 @@ class LoansView(QWidget):
             item_amt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row, 4, item_amt)
             self.table.setItem(row, 5, QTableWidgetItem(it.get("owner_full_name", "")))
-            self.table.setItem(row, 6, QTableWidgetItem(it.get("loan_status", "")))
+            self.table.setItem(row, 6, QTableWidgetItem(t_status(it.get("loan_status", ""))))
             # actions
             btn_view = QPushButton("نمایش"); btn_edit = QPushButton("ویرایش"); btn_del = QPushButton("حذف")
             for b, c in ((btn_view, "#198754"), (btn_edit, "#0d6efd"), (btn_del, "#dc3545")):
@@ -253,7 +259,7 @@ class LoansView(QWidget):
             item_amt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table_history.setItem(row, 4, item_amt)
             self.table_history.setItem(row, 5, QTableWidgetItem(it.get("owner_full_name", "")))
-            self.table_history.setItem(row, 6, QTableWidgetItem(it.get("loan_status", "")))
+            self.table_history.setItem(row, 6, QTableWidgetItem(t_status(it.get("loan_status", ""))))
             # actions (reuse same handlers)
             btn_view = QPushButton("نمایش"); btn_edit = QPushButton("ویرایش"); btn_del = QPushButton("حذف")
             for b, c in ((btn_view, "#198754"), (btn_edit, "#0d6efd"), (btn_del, "#dc3545")):

@@ -11,6 +11,7 @@ from ..services import api_client
 from ..utils.styles import PRIMARY, SECONDARY, DANGER
 from ..components.loan_dialogs import LoanViewDialog  # reuse dialog styling patterns
 from ..components.buyer_dialogs import BuyerAddDialog, BuyerEditDialog
+from ..utils.i18n import t_status
 
 API_BUYERS = "http://127.0.0.1:5000/api/loan-buyers"
 
@@ -226,7 +227,7 @@ class BuyersView(QWidget):
             except Exception:
                 amt_txt = str(amt)
             status = it.get("processing_status") or ""
-            status_fa = status_label_map.get(status, status)
+            status_fa = t_status(status)
             badge = QLabel(status_fa)
             badge.setAlignment(Qt.AlignCenter)
             badge.setStyleSheet(

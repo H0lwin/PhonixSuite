@@ -28,6 +28,7 @@ from routes.loan_buyers import bp_loan_buyers
 from routes.creditors import bp_creditors
 from routes.finance import bp_finance
 from routes.attendance import bp_attendance
+from routes.branches import bp_branches
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
@@ -177,6 +178,7 @@ app.register_blueprint(bp_loan_buyers)
 app.register_blueprint(bp_creditors)
 app.register_blueprint(bp_finance)
 app.register_blueprint(bp_attendance)
+app.register_blueprint(bp_branches)
 
 
 # ----- Bootstrapping and logging -----
@@ -227,6 +229,38 @@ def migrate_passwords():
     print(f"Password migration completed. Updated {updated} record(s).")
 
 
+def backfill_creditors():
+    """Backfill creditors for already purchased loans that lack a creditor row."""
+    ensure_database_exists()
+    ensure_loan_schema()
+    ensure_creditor_schema()
+    from models.creditor import create_creditor
+    from database import get_connection
+
+    conn = get_connection(True)
+    cur = conn.cursor()
+    cur.execute("SELECT id, owner_full_name, purchase_rate, bank_name, owner_phone FROM loans WHERE loan_status='purchased'")
+    rows = cur.fetchall()
+    created = 0; skipped = 0
+    for loan_id, full_name, rate, bank_name, owner_phone in rows:
+        cur2 = conn.cursor()
+        cur2.execute("SELECT COUNT(*) FROM creditors WHERE loan_id=%s", (loan_id,))
+        exists = int(cur2.fetchone()[0] or 0)
+        cur2.close()
+        if exists:
+            skipped += 1
+            continue
+        try:
+            amount = float(rate or 0)
+        except Exception:
+            amount = 0.0
+        desc = f"loan_id={loan_id}, rate={rate}, bank={bank_name}"
+        create_creditor((full_name or '').strip(), amount, desc, loan_id=loan_id, loan_rate=rate, bank_name=bank_name, owner_phone=owner_phone)
+        created += 1
+    cur.close(); conn.close()
+    print(f"Backfill creditors completed. Created={created}, Skipped={skipped}")
+
+
 def configure_logging():
     logs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "logs"))
     os.makedirs(logs_dir, exist_ok=True)
@@ -235,11 +269,76 @@ def configure_logging():
     formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
     handler.setFormatter(formatter)
     handler.setLevel(logging.INFO)
+
+    # App logger
     app.logger.setLevel(logging.INFO)
     app.logger.addHandler(handler)
+
+    # Werkzeug access logger
     werk = logging.getLogger("werkzeug")
     werk.setLevel(logging.INFO)
     werk.addHandler(handler)
+
+    # Root logger (ensure any plain logging.* also goes into file)
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(handler)
+
+
+# Global JSON error handler for unexpected exceptions
+@app.errorhandler(Exception)
+def _json_error_handler(exc):
+    try:
+        app.logger.exception("Unhandled error: %s", exc)
+    except Exception:
+        pass
+    return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
+def backfill_creditor_metadata():
+    """Populate missing creditor metadata (loan_rate, bank_name, owner_phone) for rows with loan_id.
+
+    Joins creditors with loans and updates NULL fields only.
+    """
+    ensure_database_exists()
+    ensure_loan_schema()
+    ensure_creditor_schema()
+    from database import get_connection
+
+    conn = get_connection(True)
+    cur = conn.cursor()
+    # Find creditors with loan_id where any metadata is NULL
+    cur.execute(
+        """
+        SELECT c.id, c.loan_id, l.purchase_rate, l.bank_name, l.owner_phone
+        FROM creditors c
+        JOIN loans l ON l.id = c.loan_id
+        WHERE c.loan_id IS NOT NULL AND (c.loan_rate IS NULL OR c.bank_name IS NULL OR c.owner_phone IS NULL)
+        """
+    )
+    rows = cur.fetchall()
+    updated = 0
+    for cid, loan_id, rate, bank, phone in rows:
+        # Build dynamic update only for NULLs
+        fields = []
+        values = []
+        if rate is not None:
+            fields.append("loan_rate=%s"); values.append(rate)
+        if bank is not None:
+            fields.append("bank_name=%s"); values.append(bank)
+        if phone is not None:
+            fields.append("owner_phone=%s"); values.append(phone)
+        if not fields:
+            continue
+        values.append(cid)
+        cur2 = conn.cursor()
+        cur2.execute(f"UPDATE creditors SET {', '.join(fields)} WHERE id=%s", tuple(values))
+        cur2.close()
+        updated += 1
+    if updated:
+        conn.commit()
+    cur.close(); conn.close()
+    print(f"Backfill creditor metadata completed. Updated {updated} record(s).")
 
 
 if __name__ == "__main__":
@@ -247,6 +346,8 @@ if __name__ == "__main__":
     parser.add_argument("--create-admin", action="store_true", help="Run admin wizard")
     parser.add_argument("--force", action="store_true", help="Always run admin wizard")
     parser.add_argument("--migrate-passwords", action="store_true", help="Hash existing plain-text passwords with bcrypt")
+    parser.add_argument("--backfill-creditors", action="store_true", help="Create creditors for already purchased loans that don't have creditors")
+    parser.add_argument("--backfill-creditor-metadata", action="store_true", help="Populate missing creditor metadata from related loans")
     args = parser.parse_args()
 
     configure_logging()
@@ -254,6 +355,10 @@ if __name__ == "__main__":
         run_create_admin(force=args.force)
     elif args.migrate_passwords:
         migrate_passwords()
+    elif args.backfill_creditors:
+        backfill_creditors()
+    elif args.backfill_creditor_metadata:
+        backfill_creditor_metadata()
     else:
         start_server()
         app.run(host="127.0.0.1", port=5000, debug=True)

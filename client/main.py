@@ -115,9 +115,20 @@ class پنجره_داشبورد(QWidget):
             # Other admin tabs
             emp_mgmt_item = QTreeWidgetItem(["مدیریت کارمندان"]); root_admin.addChild(emp_mgmt_item)
             self._page_index_map["مدیریت کارمندان"] = self.content_stack.addWidget(self._build_admin_users_tab())
-            for title in ["بستانکاران", "مدیریت شعب", "مالی", "حضور و غیاب", "گزارش فعالیت", "تنظیمات"]:
+            # Branch Management real page
+            branches_item = QTreeWidgetItem(["مدیریت شعب"]) ; root_admin.addChild(branches_item)
+            from client.views.branches_view import BranchesView as _BranchesView
+            branches_page = _BranchesView()
+            self._page_index_map["مدیریت شعب"] = self.content_stack.addWidget(branches_page)
+            # Other placeholders
+            for title in ["مالی", "حضور و غیاب", "گزارش فعالیت", "تنظیمات"]:
                 item = QTreeWidgetItem([title]); root_admin.addChild(item)
                 self._page_index_map[title] = add_placeholder(title)
+            # Creditors real page
+            creditors_item = QTreeWidgetItem(["بستانکاران"]); root_admin.addChild(creditors_item)
+            from client.views.creditors_view import CreditorsView as _CreditorsView
+            creditors_page = _CreditorsView()
+            self._page_index_map["بستانکاران"] = self.content_stack.addWidget(creditors_page)
             # Expand admin tree; loans parent toggles expand/collapse only
             self.nav_tree.expandItem(root_admin)
         else:
@@ -232,6 +243,8 @@ class پنجره_داشبورد(QWidget):
         widget.setLayout(layout)
         # Light theme, white background
         widget.setStyleSheet("QWidget{background:white;color:black;}")
+        # Load meta (departments/branches) first so filters populate, then users
+        self._load_meta()
         self._load_users()
         return widget
 
