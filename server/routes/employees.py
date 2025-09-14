@@ -7,6 +7,7 @@ from models.employee import (
     get_branches,
 )
 from utils.auth import require_roles
+from models.activity import add_log
 
 bp_employees = Blueprint("employees", __name__, url_prefix="/api/employees")
 
@@ -56,8 +57,10 @@ def employees_create():
 
     try:
         new_id = create_employee(data)
+        add_log(None, None, "create_employee", f"id={new_id}, national_id={data.get('national_id')}", "success")
         return jsonify({"status": "success", "id": new_id})
     except Exception as exc:
+        add_log(None, None, "create_employee", str(exc), "error")
         return jsonify({"status": "error", "message": str(exc)}), 400
 
 

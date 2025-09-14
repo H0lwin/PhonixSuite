@@ -206,3 +206,36 @@ class JalaliDateEdit(QWidget):
 
     def text(self) -> str:
         return self.le.text()
+
+# ---- Datetime to Jalali string helper ----
+
+def to_jalali_dt_str(dt_val) -> str:
+    """Convert a datetime-like value or string to Jalali date with HH:MM.
+    Accepts formats like 'YYYY-MM-DD HH:MM:SS' or ISO strings; falls back to input str.
+    """
+    try:
+        from datetime import datetime
+        if hasattr(dt_val, 'year') and hasattr(dt_val, 'month') and hasattr(dt_val, 'day'):
+            y, m, d = dt_val.year, dt_val.month, dt_val.day
+            hh = getattr(dt_val, 'hour', 0); mm = getattr(dt_val, 'minute', 0)
+        else:
+            s = str(dt_val)
+            # Try common MySQL/ISO formats
+            dt = None
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M"):
+                try:
+                    dt = datetime.strptime(s[:19], fmt)
+                    break
+                except Exception:
+                    continue
+            if dt is None:
+                try:
+                    dt = datetime.fromisoformat(s.replace('Z',''))
+                except Exception:
+                    return s
+            y, m, d = dt.year, dt.month, dt.day
+            hh, mm = dt.hour, dt.minute
+        jy, jm, jd = gregorian_to_jalali(y, m, d)
+        return f"{jy:04d}-{jm:02d}-{jd:02d} {hh:02d}:{mm:02d}"
+    except Exception:
+        return str(dt_val)

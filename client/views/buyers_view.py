@@ -30,29 +30,34 @@ status_label_map = dict(STATUS_LABELS)
 
 
 class BuyersView(QWidget):
-    def __init__(self):
+    def __init__(self, employee_mode=False):
         super().__init__()
+        self.employee_mode = employee_mode  # Track if in employee mode
         layout = QVBoxLayout(self); layout.setSpacing(10)
 
-        # Tabs header (Active / History)
-        tabs = QHBoxLayout(); tabs.setSpacing(8)
-        self.btn_tab_active = QPushButton("خریداران فعال")
-        self.btn_tab_history = QPushButton("سوابق خریداران")
-        tab_style = (
-            "QPushButton{padding:6px 14px;border:1px solid #dee2e6;border-radius:8px;"
-            "background:#f1f3f5;color:#212529;}"
-            " QPushButton:hover{background:#e9ecef;}"
-            " QPushButton:checked{background:#0d6efd;color:white;border-color:#0d6efd;}"
-        )
-        for b in (self.btn_tab_active, self.btn_tab_history):
-            b.setCheckable(True)
-            b.setStyleSheet(tab_style)
-        self.btn_tab_active.setChecked(True)
-        self._current_tab = "active"
-        self.btn_tab_active.clicked.connect(lambda: self._switch_tab("active"))
-        self.btn_tab_history.clicked.connect(lambda: self._switch_tab("history"))
-        tabs.addWidget(self.btn_tab_active); tabs.addWidget(self.btn_tab_history); tabs.addStretch(1)
-        layout.addLayout(tabs)
+        # Tabs header (Active / History) - History only for admin
+        if not self.employee_mode:
+            tabs = QHBoxLayout(); tabs.setSpacing(8)
+            self.btn_tab_active = QPushButton("خریداران فعال")
+            self.btn_tab_history = QPushButton("سوابق خریداران")
+            tab_style = (
+                "QPushButton{padding:6px 14px;border:1px solid #dee2e6;border-radius:8px;"
+                "background:#f1f3f5;color:#212529;}"
+                " QPushButton:hover{background:#e9ecef;}"
+                " QPushButton:checked{background:#0d6efd;color:white;border-color:#0d6efd;}"
+            )
+            for b in (self.btn_tab_active, self.btn_tab_history):
+                b.setCheckable(True)
+                b.setStyleSheet(tab_style)
+            self.btn_tab_active.setChecked(True)
+            self._current_tab = "active"
+            self.btn_tab_active.clicked.connect(lambda: self._switch_tab("active"))
+            self.btn_tab_history.clicked.connect(lambda: self._switch_tab("history"))
+            tabs.addWidget(self.btn_tab_active); tabs.addWidget(self.btn_tab_history); tabs.addStretch(1)
+            layout.addLayout(tabs)
+        else:
+            # Employee mode: no tabs, just active buyers - Remove incorrect title
+            self._current_tab = "active"
 
         # Search + Add button (for Active tab)
         self.top_bar = QHBoxLayout(); self.top_bar.setSpacing(8)
@@ -131,6 +136,10 @@ class BuyersView(QWidget):
             self._load_history()
 
     def _switch_tab(self, name: str):
+        # Employee mode doesn't have tabs
+        if self.employee_mode:
+            return
+            
         self._current_tab = name
         self.btn_tab_active.setChecked(name == "active")
         self.btn_tab_history.setChecked(name == "history")

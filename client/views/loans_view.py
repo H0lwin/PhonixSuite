@@ -17,26 +17,38 @@ API_LOANS = "http://127.0.0.1:5000/api/loans"
 
 
 class LoansView(QWidget):
-    def __init__(self):
+    def __init__(self, employee_mode=False):
         super().__init__()
+        self.employee_mode = employee_mode  # Track if in employee mode
         layout = QVBoxLayout(); layout.setSpacing(12)
 
-        # Tabs: Active Loans and Loan History
-        self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(
-            "QTabBar::tab{background:#f1f3f5;color:#212529;padding:6px 12px;border:1px solid #dee2e6;border-top-left-radius:6px;border-top-right-radius:6px;}"
-            " QTabBar::tab:selected{background:#0d6efd;color:white;border-color:#0d6efd;}"
-            " QTabWidget::pane{border:1px solid #dee2e6; top:-1px;}"
-        )
-        self.tab_active = QWidget(); active_layout = QVBoxLayout(); active_layout.setSpacing(12); self.tab_active.setLayout(active_layout)
-        self.tab_history = QWidget(); history_layout = QVBoxLayout(); history_layout.setSpacing(12); self.tab_history.setLayout(history_layout)
-        self.tabs.addTab(self.tab_active, "وام‌های فعال")
-        self.tabs.addTab(self.tab_history, "سوابق وام")
-        layout.addWidget(self.tabs)
+        # Tabs: Active Loans and Loan History (history only for admin)
+        if self.employee_mode:
+            # Employee sees only active loans, no tabs needed
+            layout = QVBoxLayout(); layout.setSpacing(12)
+            active_layout = layout
+        else:
+            # Admin sees tabs
+            self.tabs = QTabWidget()
+            self.tabs.setStyleSheet(
+                "QTabBar::tab{background:#f1f3f5;color:#212529;padding:6px 12px;border:1px solid #dee2e6;border-top-left-radius:6px;border-top-right-radius:6px;}"
+                " QTabBar::tab:selected{background:#0d6efd;color:white;border-color:#0d6efd;}"
+                " QTabWidget::pane{border:1px solid #dee2e6; top:-1px;}"
+            )
+            self.tab_active = QWidget(); active_layout = QVBoxLayout(); active_layout.setSpacing(12); self.tab_active.setLayout(active_layout)
+            self.tab_history = QWidget(); history_layout = QVBoxLayout(); history_layout.setSpacing(12); self.tab_history.setLayout(history_layout)
+            self.tabs.addTab(self.tab_active, "وام‌های فعال")
+            self.tabs.addTab(self.tab_history, "سوابق وام")
+            layout.addWidget(self.tabs)
 
         # Search + Filters bar
         filters_bar = QHBoxLayout(); filters_bar.setSpacing(8)
-        self.in_search = QLineEdit(); self.in_search.setPlaceholderText("جستجو نام بانک / نام مالک")
+        self.in_search = QLineEdit()
+        # Update placeholder text based on mode
+        if self.employee_mode:
+            self.in_search.setPlaceholderText("جستجو نام بانک")
+        else:
+            self.in_search.setPlaceholderText("جستجو نام بانک / نام مالک")
         self.cb_bank = QComboBox(); self.cb_bank.setMinimumWidth(160); self.cb_bank.addItem("همه بانک‌ها", "")
         self.cb_type = QComboBox(); self.cb_type.setMinimumWidth(150); self.cb_type.addItem("همه نوع وام‌ها", "")
         self.cb_duration = QComboBox(); self.cb_duration.setMinimumWidth(150); self.cb_duration.addItem("همه مدت‌ها", "")
@@ -68,14 +80,25 @@ class LoansView(QWidget):
         active_layout.addLayout(filters_bar)
 
         # Table Card
-        card = QGroupBox("همه وام‌ها")
+        card_title = "وام‌های موجود" if self.employee_mode else "همه وام‌ها"
+        card = QGroupBox(card_title)
         card.setStyleSheet("QGroupBox{font-weight:bold; border:1px solid #ddd; border-radius:6px; margin-top:10px;} QGroupBox::title{subcontrol-origin: margin; subcontrol-position: top right; padding: 0 8px;}")
         card_layout = QVBoxLayout(); card_layout.setSpacing(8)
 
-        self.table = QTableWidget(0, 10)
-        self.table.setHorizontalHeaderLabels([
-            "ID", "بانک", "نوع", "مدت", "مبلغ", "مالک", "وضعیت", "نمایش", "ویرایش", "حذف"
-        ])
+        # Adjust table columns based on mode
+        if self.employee_mode:
+            # Employee sees limited columns: Bank Name | Loan Type | Duration | Amount | Status
+            self.table = QTableWidget(0, 5)
+            self.table.setHorizontalHeaderLabels([
+                "بانک", "نوع وام", "مدت", "مبلغ", "وضعیت"
+            ])
+        else:
+            # Admin sees all columns
+            self.table = QTableWidget(0, 10)
+            self.table.setHorizontalHeaderLabels([
+                "ID", "بانک", "نوع", "مدت", "مبلغ", "مالک", "وضعیت", "نمایش", "ویرایش", "حذف"
+            ])
+            
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -84,14 +107,19 @@ class LoansView(QWidget):
         self.table.setStyleSheet("QTableWidget{background:white;} QHeaderView::section{background:#f8f9fa; padding:6px; border:1px solid #e9ecef;} QTableWidget::item{padding:10px;}")
         card_layout.addWidget(self.table)
 
-        # Controls under table
+        # Controls under table - adjusted for employee mode
         controls = QHBoxLayout()
-        btn_add = QPushButton("افزودن وام")
-        btn_add.setStyleSheet("QPushButton{background:#0d6efd;color:white;padding:6px 12px;border-radius:4px;} QPushButton:hover{background:#0b5ed7}")
-        btn_add.clicked.connect(self._open_add)
+        
+        if not self.employee_mode:
+            # Only admin can add loans
+            btn_add = QPushButton("افزودن وام")
+            btn_add.setStyleSheet("QPushButton{background:#0d6efd;color:white;padding:6px 12px;border-radius:4px;} QPushButton:hover{background:#0b5ed7}")
+            btn_add.clicked.connect(self._open_add)
+            controls.addWidget(btn_add)
+        
         btn_refresh = QPushButton("نوسازی فهرست"); btn_refresh.clicked.connect(self._load_loans)
         btn_refresh.setStyleSheet("QPushButton{background:#6c757d;color:white;padding:6px 12px;border-radius:4px;} QPushButton:hover{background:#5c636a}")
-        controls.addWidget(btn_add); controls.addStretch(1); controls.addWidget(btn_refresh)
+        controls.addStretch(1); controls.addWidget(btn_refresh)
         card_layout.addLayout(controls)
 
         card.setLayout(card_layout)
@@ -100,32 +128,33 @@ class LoansView(QWidget):
         self.lbl_status = QLabel(""); self.lbl_status.setAlignment(Qt.AlignCenter)
         active_layout.addWidget(self.lbl_status)
 
-        # History Tab UI
-        history_card = QGroupBox("سوابق وام")
-        history_card.setStyleSheet("QGroupBox{font-weight:bold; border:1px solid #ddd; border-radius:6px; margin-top:10px;} QGroupBox::title{subcontrol-origin: margin; subcontrol-position: top right; padding: 0 8px;}")
-        history_card_layout = QVBoxLayout(); history_card_layout.setSpacing(8)
+        if not self.employee_mode:
+            # History Tab UI
+            history_card = QGroupBox("سوابق وام")
+            history_card.setStyleSheet("QGroupBox{font-weight:bold; border:1px solid #ddd; border-radius:6px; margin-top:10px;} QGroupBox::title{subcontrol-origin: margin; subcontrol-position: top right; padding: 0 8px;}")
+            history_card_layout = QVBoxLayout(); history_card_layout.setSpacing(8)
 
-        self.table_history = QTableWidget(0, 10)
-        self.table_history.setHorizontalHeaderLabels([
-            "ID", "بانک", "نوع", "مدت", "مبلغ", "مالک", "وضعیت", "نمایش", "ویرایش", "حذف"
-        ])
-        self.table_history.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table_history.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table_history.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table_history.setAlternatingRowColors(True)
-        self.table_history.verticalHeader().setDefaultSectionSize(int(55))
-        self.table_history.setStyleSheet("QTableWidget{background:white;} QHeaderView::section{background:#f8f9fa; padding:6px; border:1px solid #e9ecef;} QTableWidget::item{padding:10px;}")
-        history_card_layout.addWidget(self.table_history)
+            self.table_history = QTableWidget(0, 10)
+            self.table_history.setHorizontalHeaderLabels([
+                "ID", "بانک", "نوع", "مدت", "مبلغ", "مالک", "وضعیت", "نمایش", "ویرایش", "حذف"
+            ])
+            self.table_history.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            self.table_history.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            self.table_history.setSelectionBehavior(QAbstractItemView.SelectRows)
+            self.table_history.setAlternatingRowColors(True)
+            self.table_history.verticalHeader().setDefaultSectionSize(int(55))
+            self.table_history.setStyleSheet("QTableWidget{background:white;} QHeaderView::section{background:#f8f9fa; padding:6px; border:1px solid #e9ecef;} QTableWidget::item{padding:10px;}")
+            history_card_layout.addWidget(self.table_history)
 
-        history_controls = QHBoxLayout()
-        btn_refresh_history = QPushButton("نوسازی فهرست")
-        btn_refresh_history.clicked.connect(self._load_loans)
-        btn_refresh_history.setStyleSheet("QPushButton{background:#6c757d;color:white;padding:6px 12px;border-radius:4px;} QPushButton:hover{background:#5c636a}")
-        history_controls.addStretch(1); history_controls.addWidget(btn_refresh_history)
-        history_card_layout.addLayout(history_controls)
+            history_controls = QHBoxLayout()
+            btn_refresh_history = QPushButton("نوسازی فهرست")
+            btn_refresh_history.clicked.connect(self._load_loans)
+            btn_refresh_history.setStyleSheet("QPushButton{background:#6c757d;color:white;padding:6px 12px;border-radius:4px;} QPushButton:hover{background:#5c636a}")
+            history_controls.addStretch(1); history_controls.addWidget(btn_refresh_history)
+            history_card_layout.addLayout(history_controls)
 
-        history_card.setLayout(history_card_layout)
-        history_layout.addWidget(history_card)
+            history_card.setLayout(history_card_layout)
+            history_layout.addWidget(history_card)
 
         self.setLayout(layout)
         self.setStyleSheet("QWidget{background:white;color:black;}")
@@ -178,7 +207,12 @@ class LoansView(QWidget):
         max_amount = float(self.in_amount_max.value())
         def match(it: Dict[str, Any]) -> bool:
             if txt:
-                name = ((it.get("bank_name") or "") + " " + (it.get("owner_full_name") or "")).lower()
+                if self.employee_mode:
+                    # Employee can only search by bank name
+                    name = (it.get("bank_name") or "").lower()
+                else:
+                    # Admin can search by bank name and owner name
+                    name = ((it.get("bank_name") or "") + " " + (it.get("owner_full_name") or "")).lower()
                 if txt not in name:
                     return False
             if bank and it.get("bank_name") != bank:
@@ -197,11 +231,16 @@ class LoansView(QWidget):
                 return False
             return True
         filtered = [it for it in self._all if match(it)]
+        
         # Split into Active (not purchased) and History (purchased)
-        history = [it for it in filtered if str(it.get("loan_status", "")).lower() == "purchased"]
+        # Employee mode doesn't see purchased loans at all (filtered by server)
         active = [it for it in filtered if str(it.get("loan_status", "")).lower() != "purchased"]
         self._render_active(active)
-        self._render_history(history)
+        
+        if not self.employee_mode:
+            # Only admin sees history
+            history = [it for it in filtered if str(it.get("loan_status", "")).lower() == "purchased"]
+            self._render_history(history)
 
     def _render_active(self, items: List[Dict[str, Any]]):
         # Render Active Loans (non-purchased) in main table
@@ -209,36 +248,56 @@ class LoansView(QWidget):
         for it in items:
             row = self.table.rowCount(); self.table.insertRow(row)
             rid = it.get("id", "")
-            self.table.setItem(row, 0, QTableWidgetItem(str(rid)))
-            self.table.setItem(row, 1, QTableWidgetItem(it.get("bank_name", "")))
-            self.table.setItem(row, 2, QTableWidgetItem(it.get("loan_type", "")))
-            self.table.setItem(row, 3, QTableWidgetItem(it.get("duration", "")))
-            # amount formatting
-            try:
-                amt = float(it.get("amount") or 0); amt_txt = f"{amt:,.2f}"
-            except Exception:
-                amt_txt = str(it.get("amount", ""))
-            item_amt = QTableWidgetItem(amt_txt)
-            item_amt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.table.setItem(row, 4, item_amt)
-            self.table.setItem(row, 5, QTableWidgetItem(it.get("owner_full_name", "")))
-            self.table.setItem(row, 6, QTableWidgetItem(t_status(it.get("loan_status", ""))))
-            # actions
-            btn_view = QPushButton("نمایش"); btn_edit = QPushButton("ویرایش"); btn_del = QPushButton("حذف")
-            for b, c in ((btn_view, "#198754"), (btn_edit, "#0d6efd"), (btn_del, "#dc3545")):
-                b.setStyleSheet(f"QPushButton{{background:{c};color:white;padding:6px 10px;border-radius:4px;}} QPushButton:hover{{opacity:0.9}}")
-            def _make_view(id_):
-                return lambda: self._open_view(id_)
-            def _make_edit(id_):
-                return lambda: self._open_edit(id_)
-            def _make_del(id_):
-                return lambda: self._delete(id_)
-            btn_view.clicked.connect(_make_view(rid))
-            btn_edit.clicked.connect(_make_edit(rid))
-            btn_del.clicked.connect(_make_del(rid))
-            self.table.setCellWidget(row, 7, btn_view)
-            self.table.setCellWidget(row, 8, btn_edit)
-            self.table.setCellWidget(row, 9, btn_del)
+            
+            if self.employee_mode:
+                # Employee mode: Bank Name | Loan Type | Duration | Amount | Status (no ID, no actions)
+                self.table.setItem(row, 0, QTableWidgetItem(it.get("bank_name", "")))
+                self.table.setItem(row, 1, QTableWidgetItem(it.get("loan_type", "")))
+                self.table.setItem(row, 2, QTableWidgetItem(it.get("duration", "")))
+                
+                # Amount formatting
+                try:
+                    amt = float(it.get("amount") or 0); amt_txt = f"{amt:,.2f}"
+                except Exception:
+                    amt_txt = str(it.get("amount", ""))
+                item_amt = QTableWidgetItem(amt_txt)
+                item_amt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.table.setItem(row, 3, item_amt)
+                
+                self.table.setItem(row, 4, QTableWidgetItem(t_status(it.get("loan_status", ""))))
+                
+            else:
+                # Admin mode: Base columns that both admin and employee see
+                self.table.setItem(row, 0, QTableWidgetItem(str(rid)))
+                self.table.setItem(row, 1, QTableWidgetItem(it.get("bank_name", "")))
+                self.table.setItem(row, 2, QTableWidgetItem(it.get("loan_type", "")))
+                self.table.setItem(row, 3, QTableWidgetItem(it.get("duration", "")))
+                
+                # Amount formatting
+                try:
+                    amt = float(it.get("amount") or 0); amt_txt = f"{amt:,.2f}"
+                except Exception:
+                    amt_txt = str(it.get("amount", ""))
+                item_amt = QTableWidgetItem(amt_txt)
+                item_amt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.table.setItem(row, 4, item_amt)
+                
+                # Admin mode: full columns and actions
+                self.table.setItem(row, 5, QTableWidgetItem(it.get("owner_full_name", "")))
+                self.table.setItem(row, 6, QTableWidgetItem(t_status(it.get("loan_status", ""))))
+                
+                # All action buttons for admin
+                btn_view = QPushButton("نمایش"); btn_edit = QPushButton("ویرایش"); btn_del = QPushButton("حذف")
+                for b, c in ((btn_view, "#198754"), (btn_edit, "#0d6efd"), (btn_del, "#dc3545")):
+                    b.setStyleSheet(f"QPushButton{{background:{c};color:white;padding:6px 10px;border-radius:4px;}} QPushButton:hover{{opacity:0.9}}")
+                
+                btn_view.clicked.connect(lambda _, id_=rid: self._open_view(id_))
+                btn_edit.clicked.connect(lambda _, id_=rid: self._open_edit(id_))
+                btn_del.clicked.connect(lambda _, id_=rid: self._delete(id_))
+                
+                self.table.setCellWidget(row, 7, btn_view)
+                self.table.setCellWidget(row, 8, btn_edit)
+                self.table.setCellWidget(row, 9, btn_del)
 
     def _render_history(self, items: List[Dict[str, Any]]):
         # Render purchased loans in history table

@@ -26,17 +26,24 @@ def ensure_loan_buyer_schema():
             sale_price DECIMAL(14,2) NULL,
             sale_type ENUM('cash','installment') NULL,
             created_by_name VARCHAR(191) NULL,
+            created_by_nid VARCHAR(10) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             CONSTRAINT fk_lb_loan FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
         """
     )
-    # Ensure created_by_name exists (migration for older tables)
+    # Ensure created_by_name exists (migration for older tables) and created_by_nid
     try:
         cur.execute("SHOW COLUMNS FROM loan_buyers LIKE 'created_by_name'")
         if not cur.fetchone():
             cur.execute("ALTER TABLE loan_buyers ADD COLUMN created_by_name VARCHAR(191) NULL AFTER sale_type")
+    except Exception:
+        pass
+    try:
+        cur.execute("SHOW COLUMNS FROM loan_buyers LIKE 'created_by_nid'")
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE loan_buyers ADD COLUMN created_by_nid VARCHAR(10) NULL AFTER created_by_name")
     except Exception:
         pass
 
@@ -72,14 +79,14 @@ def create_loan_buyer(data: Dict[str, Any]) -> int:
     cur.execute(
         """
         INSERT INTO loan_buyers (first_name, last_name, national_id, phone, requested_amount, bank_agent, visit_date,
-                                 processing_status, notes, loan_id, broker, sale_price, sale_type, created_by_name)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                 processing_status, notes, loan_id, broker, sale_price, sale_type, created_by_name, created_by_nid)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,
         (
             data.get("first_name"), data.get("last_name"), data.get("national_id"), data.get("phone"),
             data.get("requested_amount"), data.get("bank_agent"), data.get("visit_date"),
             data.get("processing_status", "request_registered"), data.get("notes"), data.get("loan_id"),
-            data.get("broker"), data.get("sale_price"), data.get("sale_type"), data.get("created_by_name"),
+            data.get("broker"), data.get("sale_price"), data.get("sale_type"), data.get("created_by_name"), data.get("created_by_nid"),
         ),
     )
     buyer_id = cur.lastrowid
@@ -130,15 +137,24 @@ def update_loan_buyer(buyer_id: int, data: Dict[str, Any]):
 def list_loan_buyers_for_user(user_role: str, username: Optional[str]) -> List[dict]:
     conn = get_connection(True)
     cur = conn.cursor()
-    if user_role == "broker" and username:
+    if user_role == "admin":
+        cur.execute(
+            "SELECT id, first_name, last_name, national_id, phone, requested_amount, bank_agent, visit_date, processing_status, loan_id, broker, sale_price, sale_type, created_by_name, created_at, updated_at FROM loan_buyers ORDER BY id DESC"
+        )
+    elif user_role == "broker" and username:
         cur.execute(
             "SELECT id, first_name, last_name, national_id, phone, requested_amount, bank_agent, visit_date, processing_status, loan_id, broker, sale_price, sale_type, created_by_name, created_at, updated_at FROM loan_buyers WHERE broker=%s ORDER BY id DESC",
             (username,),
         )
     else:
-        cur.execute(
-            "SELECT id, first_name, last_name, national_id, phone, requested_amount, bank_agent, visit_date, processing_status, loan_id, broker, sale_price, sale_type, created_by_name, created_at, updated_at FROM loan_buyers ORDER BY id DESC"
-        )
+        # Regular employee/secretary: only own created records
+        if username:
+            cur.execute(
+                "SELECT id, first_name, last_name, national_id, phone, requested_amount, bank_agent, visit_date, processing_status, loan_id, broker, sale_price, sale_type, created_by_name, created_at, updated_at FROM loan_buyers WHERE created_by_nid=%s ORDER BY id DESC",
+                (username,),
+            )
+        else:
+            cur.execute("SELECT id, first_name, last_name, national_id, phone, requested_amount, bank_agent, visit_date, processing_status, loan_id, broker, sale_price, sale_type, created_by_name, created_at, updated_at FROM loan_buyers WHERE 1=0")
     rows = cur.fetchall()
     cur.close()
     conn.close()

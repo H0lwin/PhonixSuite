@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
     QSpacerItem,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtCore import Qt, QObject, Signal, QTimer
 from PySide6.QtGui import QFontDatabase, QFont
 
 # Global signals for inter-component communication
@@ -64,13 +64,20 @@ class پنجره_داشبورد(QWidget):
             from .state import session as _session
         _session.set_session(توکن, نقش, نمایش_نام)
 
+        # Start 60-min session timer; on timeout, force relogin
+        self._session_timer = QTimer(self)
+        self._session_timer.setInterval(60 * 60 * 1000)  # 60 minutes
+        self._session_timer.setSingleShot(True)
+        self._session_timer.timeout.connect(self._on_session_timeout)
+        self._session_timer.start()
+
         # Two-column layout: right sidebar (navigation), left content stack
         root = QHBoxLayout()
 
         # Sidebar (right) with navigation list
         sidebar = QVBoxLayout()
         header = QLabel(f"خوش آمدید، {نمایش_نام} ({'مدیر' if نقش == 'admin' else 'کاربر'})")
-        header.setAlignment(Qt.AlignCenter)
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sidebar.addWidget(header)
 
         # Using a tree for hierarchical admin tabs
@@ -88,19 +95,27 @@ class پنجره_داشبورد(QWidget):
         # Helper to add placeholder pages
         def add_placeholder(title: str) -> int:
             w = QWidget(); v = QVBoxLayout(); lbl = QLabel(f"{title}")
-            lbl.setAlignment(Qt.AlignCenter); v.addWidget(lbl); w.setLayout(v)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter); v.addWidget(lbl); w.setLayout(v)
             self.content_stack.addWidget(w); return self.content_stack.indexOf(w)
 
         # Build sidebar items based on role
         from PySide6.QtWidgets import QTreeWidgetItem
         self._page_index_map = {}
         if نقش == "admin":
-            # Admin tree structure
+            # Admin tree structure - Full access to everything
             root_admin = QTreeWidgetItem(["مدیریت (ادمین)"])
             self.nav_tree.addTopLevelItem(root_admin)
-            # Overview (placeholder)
+            # Overview real page
             overview_item = QTreeWidgetItem(["نمای کلی"]) ; root_admin.addChild(overview_item)
-            self._page_index_map["نمای کلی"] = add_placeholder("نمای کلی")
+            from client.views.dashboard_overview import DashboardOverview as _DashboardOverview
+            overview_page = _DashboardOverview()
+            # Share session timer with dashboard for countdown
+            if hasattr(self, "_session_timer"):
+                try:
+                    overview_page.set_session_timer(self._session_timer)
+                except Exception:
+                    pass
+            self._page_index_map["نمای کلی"] = self.content_stack.addWidget(overview_page)
             # Loans (dropdown) — parent has no content, sub-tabs have content
             loans_root = QTreeWidgetItem(["وام‌ها"]) ; root_admin.addChild(loans_root)
             admin_loan_subtabs = ["همه وام‌ها", "خریداران وام"]
@@ -126,8 +141,24 @@ class پنجره_داشبورد(QWidget):
             from client.views.branches_view import BranchesView as _BranchesView
             branches_page = _BranchesView()
             self._page_index_map["مدیریت شعب"] = self.content_stack.addWidget(branches_page)
+            # Finance real page
+            finance_item = QTreeWidgetItem(["مالی"]); root_admin.addChild(finance_item)
+            from client.views.finance_view import FinanceView as _FinanceView
+            finance_page = _FinanceView()
+            self._page_index_map["مالی"] = self.content_stack.addWidget(finance_page)
+            
+            # Attendance real page
+            att_item = QTreeWidgetItem(["حضور و غیاب"]); root_admin.addChild(att_item)
+            from client.views.attendance_view import AttendanceView as _AttendanceView
+            att_page = _AttendanceView()
+            self._page_index_map["حضور و غیاب"] = self.content_stack.addWidget(att_page)
+            # Activity report real page
+            act_item = QTreeWidgetItem(["گزارش فعالیت"]); root_admin.addChild(act_item)
+            from client.views.activity_view import ActivityView as _ActivityView
+            act_page = _ActivityView()
+            self._page_index_map["گزارش فعالیت"] = self.content_stack.addWidget(act_page)
             # Other placeholders
-            for title in ["مالی", "حضور و غیاب", "گزارش فعالیت", "تنظیمات"]:
+            for title in ["تنظیمات"]:
                 item = QTreeWidgetItem([title]); root_admin.addChild(item)
                 self._page_index_map[title] = add_placeholder(title)
             # Creditors real page
@@ -138,20 +169,41 @@ class پنجره_داشبورد(QWidget):
             # Expand admin tree; loans parent toggles expand/collapse only
             self.nav_tree.expandItem(root_admin)
         else:
-            # Employee (non-admin) tabs
-            root_emp = QTreeWidgetItem(["کاربر"])
+            # Employee (non-admin) dashboard - Limited access
+            root_emp = QTreeWidgetItem(["داشبورد کارمند"])
             self.nav_tree.addTopLevelItem(root_emp)
-            for title in ["نمای کلی", "وام‌های من", "خریداران من", "گزارش‌ها"]:
-                idx = add_placeholder(title)
-                child = QTreeWidgetItem([title]); root_emp.addChild(child)
-                self._page_index_map[title] = idx
+            
+            # Overview for employees (limited info)
+            overview_item = QTreeWidgetItem(["نمای کلی"]); root_emp.addChild(overview_item)
+            from client.views.employee_overview import EmployeeOverview as _EmployeeOverview
+            overview_page = _EmployeeOverview()
+            self._page_index_map["نمای کلی"] = self.content_stack.addWidget(overview_page)
+            
+            # Limited loans view (only available loans with limited fields)
+            loans_item = QTreeWidgetItem(["وام‌ها"]); root_emp.addChild(loans_item)
+            from client.views.loans_view import LoansView as _LoansView
+            loans_page = _LoansView(employee_mode=True)  # Pass employee mode flag
+            self._page_index_map["وام‌ها"] = self.content_stack.addWidget(loans_page)
+            
+            # Employee's own buyers
+            buyers_item = QTreeWidgetItem(["خریداران من"]); root_emp.addChild(buyers_item)
+            from client.views.buyers_view import BuyersView as _BuyersView
+            buyers_page = _BuyersView(employee_mode=True)  # Pass employee mode flag
+            self._page_index_map["خریداران من"] = self.content_stack.addWidget(buyers_page)
+            
+            # Personal reports
+            reports_item = QTreeWidgetItem(["گزارشات"]); root_emp.addChild(reports_item)
+            reports_page = self._build_employee_reports()
+            self._page_index_map["گزارشات"] = self.content_stack.addWidget(reports_page)
+            
             self.nav_tree.expandItem(root_emp)
 
         # Navigation behavior: clicking items selects associated page if mapped
         def on_tree_item_clicked(item, _col):
             title = item.text(0).strip()
-            # Clicking Loans root toggles expand/collapse; ignore content change
-            if title == "وام‌ها":
+            # For admin: Clicking Loans root toggles expand/collapse; ignore content change
+            # For employee: Allow clicking on loans since there's no expansion
+            if title == "وام‌ها" and نقش == "admin":
                 return
             idx = (self._page_index_map or {}).get(title)
             if idx is not None:
@@ -172,24 +224,414 @@ class پنجره_داشبورد(QWidget):
         root.addWidget(side_container, 0)
         self.setLayout(root)
 
-    def _logout(self):
+    def _logout(self, relogin_message: str | None = None):
         try:
             # Use centralized client (will inject token)
             from client.services import api_client
         except Exception:
             from .services import api_client
+        
+        # Auto check-out on logout with shorter timeout to prevent hanging
         try:
-            api_client.post_json("http://127.0.0.1:5000/api/auth/logout", {})
+            api_client.post_json("http://127.0.0.1:5000/api/attendance/check-out", {}, timeout=2)
         except Exception:
-            pass
-        # Close dashboard and return to login
-        self.close()
+            pass  # Ignore errors during logout
+        
+        try:
+            api_client.post_json("http://127.0.0.1:5000/api/auth/logout", {}, timeout=2)
+        except Exception:
+            pass  # Ignore errors during logout
+        
+        # Clear session first to prevent further API calls
         try:
             from client.state import session as _session
         except Exception:
             from .state import session as _session
         _session.clear_session()
-        self.بازگشت_به_ورود()
+        
+        # Close dashboard and return to login
+        try:
+            self.close()
+        except Exception:
+            pass
+        
+        # Call the callback to return to login
+        try:
+            if callable(self.بازگشت_به_ورود):
+                self.بازگشت_به_ورود()
+        except Exception:
+            pass
+        
+        # Show relogin message if provided
+        if relogin_message:
+            try:
+                from PySide6.QtWidgets import QMessageBox
+                # Use self as parent instead of None to avoid type error
+                QMessageBox.information(self, "ورود مجدد", relogin_message)
+            except Exception:
+                pass
+
+    def _on_session_timeout(self):
+        # Force relogin after 60 minutes
+        self._logout("برای ادامه کار دوباره وارد شوید (Login again)")
+    
+    def _build_employee_overview(self, display_name: str) -> QWidget:
+        """Build simple overview for employee users"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setSpacing(20)
+        
+        # Welcome header
+        title = QLabel(f"خوش آمدید، {display_name}")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size:24px; font-weight:bold; margin:20px; color:#2c5aa0;")
+        layout.addWidget(title)
+        
+        # Employee info cards
+        info_layout = QHBoxLayout()
+        
+        # Summary card
+        summary_card = QGroupBox("خلاصه اطلاعات")
+        summary_card.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #ddd;
+                border-radius: 10px;
+                margin-top: 15px;
+                padding: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top right;
+                padding: 0 10px;
+                color: #2c5aa0;
+            }
+        """)
+        
+        summary_layout = QVBoxLayout(summary_card)
+        summary_layout.addWidget(QLabel("• شما می‌توانید وام‌های موجود را مشاهده کنید"))
+        summary_layout.addWidget(QLabel("• امکان ثبت و مدیریت خریداران خود را دارید"))
+        summary_layout.addWidget(QLabel("• گزارشات شخصی خود را ببینید"))
+        summary_layout.addWidget(QLabel("• دسترسی به تاریخچه‌ها محدود است"))
+        
+        info_layout.addWidget(summary_card)
+        
+        # Access info card  
+        access_card = QGroupBox("محدودیت‌های دسترسی")
+        access_card.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #f39c12;
+                border-radius: 10px;
+                margin-top: 15px;
+                padding: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top right;
+                padding: 0 10px;
+                color: #f39c12;
+            }
+        """)
+        
+        access_layout = QVBoxLayout(access_card)
+        access_layout.addWidget(QLabel("• وام‌های فروخته‌شده قابل مشاهده نیستند"))
+        access_layout.addWidget(QLabel("• فقط اطلاعات محدود وام‌ها نمایش داده می‌شود"))
+        access_layout.addWidget(QLabel("• تنها خریداران ثبت‌شده توسط خودتان قابل ویرایش هستند"))
+        access_layout.addWidget(QLabel("• دسترسی به مدیریت کارمندان و مالی ندارید"))
+        
+        info_layout.addWidget(access_card)
+        
+        layout.addLayout(info_layout)
+        layout.addStretch()
+        
+        widget.setLayout(layout)
+        widget.setStyleSheet("QWidget { background: white; }")
+        return widget
+    
+    def _build_employee_reports(self) -> QWidget:
+        """Build enhanced reports page for employees with proper styling and organization"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Header section
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(5)
+        
+        title = QLabel("گزارشات شخصی")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("""
+            font-size: 24px; 
+            font-weight: bold; 
+            color: #2c5aa0;
+            margin-bottom: 10px;
+        """)
+        
+        subtitle = QLabel("نمای کلی فعالیت‌ها و آمار شما")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setStyleSheet("font-size: 14px; color: #6c757d; margin-bottom: 20px;")
+        
+        header_layout.addWidget(title)
+        header_layout.addWidget(subtitle)
+        layout.addLayout(header_layout)
+        
+        # Main content in a scrollable area for better organization
+        content_layout = QVBoxLayout()
+        content_layout.setSpacing(20)
+        
+        # Personal statistics summary card
+        summary_card = QGroupBox("📈 خلاصه آمار")
+        summary_card.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 16px;
+                border: 2px solid #17a2b8;
+                border-radius: 12px;
+                margin-top: 20px;
+                padding: 20px;
+                background-color: #f8f9fa;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top right;
+                padding: 0 15px;
+                color: #17a2b8;
+                background-color: white;
+                border-radius: 6px;
+            }
+        """)
+        
+        summary_layout = QVBoxLayout(summary_card)
+        summary_layout.setSpacing(15)
+        
+        # Create a grid layout for better organization
+        grid_layout = QHBoxLayout()
+        
+        # Left column
+        left_col = QVBoxLayout()
+        self.lbl_my_buyers = QLabel("👥 در حال بارگذاری...")
+        self.lbl_my_buyers.setStyleSheet("""
+            padding: 10px;
+            background-color: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+        """)
+        
+        self.lbl_my_purchased_loans = QLabel("💰 در حال بارگذاری...")
+        self.lbl_my_purchased_loans.setStyleSheet("""
+            padding: 10px;
+            background-color: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+        """)
+        
+        left_col.addWidget(self.lbl_my_buyers)
+        left_col.addWidget(self.lbl_my_purchased_loans)
+        
+        # Right column
+        right_col = QVBoxLayout()
+        self.lbl_total_amount = QLabel("📉 در حال محاسبه...")
+        self.lbl_total_amount.setStyleSheet("""
+            padding: 10px;
+            background-color: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+        """)
+        
+        self.lbl_success_rate = QLabel("🎯 در حال محاسبه...")
+        self.lbl_success_rate.setStyleSheet("""
+            padding: 10px;
+            background-color: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+        """)
+        
+        right_col.addWidget(self.lbl_total_amount)
+        right_col.addWidget(self.lbl_success_rate)
+        
+        grid_layout.addLayout(left_col)
+        grid_layout.addLayout(right_col)
+        summary_layout.addLayout(grid_layout)
+        
+        content_layout.addWidget(summary_card)
+        
+        # Detailed status breakdown card
+        status_card = QGroupBox("📋 جزئیات وضعیت خریداران")
+        status_card.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 16px;
+                border: 2px solid #28a745;
+                border-radius: 12px;
+                margin-top: 20px;
+                padding: 20px;
+                background-color: #f8f9fa;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top right;
+                padding: 0 15px;
+                color: #28a745;
+                background-color: white;
+                border-radius: 6px;
+            }
+        """)
+        
+        status_layout = QVBoxLayout(status_card)
+        status_layout.setSpacing(10)
+        
+        self.lbl_status_breakdown = QLabel("🔄 در حال بارگذاری جزئیات...")
+        self.lbl_status_breakdown.setStyleSheet("""
+            padding: 15px;
+            background-color: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.6;
+        """)
+        self.lbl_status_breakdown.setWordWrap(True)
+        
+        status_layout.addWidget(self.lbl_status_breakdown)
+        content_layout.addWidget(status_card)
+        
+        # Access limitation notice with better styling
+        notice_card = QGroupBox("⚠️ ملاحظات مهم")
+        notice_card.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 16px;
+                border: 2px solid #ffc107;
+                border-radius: 12px;
+                margin-top: 20px;
+                padding: 20px;
+                background-color: #fffbf0;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top right;
+                padding: 0 15px;
+                color: #ffc107;
+                background-color: white;
+                border-radius: 6px;
+            }
+        """)
+        
+        notice_layout = QVBoxLayout(notice_card)
+        notice_layout.setSpacing(8)
+        
+        notices = [
+            "• تمام اطلاعات فقط قابل مشاهده است و قابل ویرایش نیست",
+            "• تغییر وضعیت و ثبت تاریخ تنها توسط مدیر یا کارگذار مسئول امکان‌پذیر است",
+            "• برای اعمال تغییرات به بخش‌های مربوطه مراجعه کنید"
+        ]
+        
+        for notice in notices:
+            label = QLabel(notice)
+            label.setStyleSheet("""
+                padding: 8px;
+                background-color: white;
+                border-left: 4px solid #ffc107;
+                border-radius: 4px;
+                font-size: 13px;
+            """)
+            label.setWordWrap(True)
+            notice_layout.addWidget(label)
+        
+        content_layout.addWidget(notice_card)
+        
+        layout.addLayout(content_layout)
+        
+        # Load personal stats
+        self._load_employee_detailed_stats()
+        
+        layout.addStretch()
+        widget.setLayout(layout)
+        widget.setStyleSheet("QWidget { background: #f5f6fa; }")
+        return widget
+    
+    def _load_employee_detailed_stats(self):
+        """Load detailed personal statistics for employee reports with enhanced calculations"""
+        try:
+            from client.services import api_client
+            
+            # Get own buyers count and status breakdown
+            r = api_client.get("http://127.0.0.1:5000/api/loan-buyers")
+            data = r.json()
+            if data.get("status") == "success":
+                buyers = data.get("items", [])
+                total_buyers = len(buyers)
+                
+                # Calculate purchased loans count (those with status 'loan_paid')
+                purchased_count = sum(1 for buyer in buyers if buyer.get("processing_status") == "loan_paid")
+                
+                # Calculate total amount of purchased loans
+                total_amount = 0
+                for buyer in buyers:
+                    if buyer.get("processing_status") == "loan_paid":
+                        try:
+                            amount = float(buyer.get("requested_amount") or 0)
+                            total_amount += amount
+                        except (ValueError, TypeError):
+                            continue
+                
+                # Calculate success rate
+                success_rate = (purchased_count / total_buyers * 100) if total_buyers > 0 else 0
+                
+                # Update labels with proper formatting
+                self.lbl_my_buyers.setText(f"👥 تعداد کل خریداران: {total_buyers} نفر")
+                self.lbl_my_purchased_loans.setText(f"💰 وام‌های خریداری‌شده: {purchased_count} فقره")
+                self.lbl_total_amount.setText(f"📉 مجموع مبلغ: {total_amount:,.0f} تومان")
+                self.lbl_success_rate.setText(f"🎯 نرخ موفقیت: {success_rate:.1f}%")
+                
+                # Status breakdown with better formatting
+                status_counts = {}
+                for buyer in buyers:
+                    status = buyer.get("processing_status", "unknown")
+                    status_counts[status] = status_counts.get(status, 0) + 1
+                
+                if status_counts:
+                    status_text = "📋 تفکیک وضعیت خریداران:\n\n"
+                    status_mapping = {
+                        "request_registered": ("📅 درخواست ثبت شد", "#17a2b8"),
+                        "under_review": ("🔍 در حال بررسی", "#ffc107"),
+                        "rights_transfer": ("🔄 انتقال حقوق", "#fd7e14"),
+                        "bank_validation": ("🏦 اعتبارسنجی بانکی", "#6f42c1"),
+                        "loan_paid": ("✅ وام پرداخت شد", "#28a745"),
+                        "guarantor_issue": ("⚠️ ضامن ناقص", "#dc3545"),
+                        "borrower_issue": ("⚠️ اطلاعات وام‌گیرنده ناقص", "#dc3545"),
+                    }
+                    
+                    for status, count in sorted(status_counts.items(), key=lambda x: x[1], reverse=True):
+                        status_fa, color = status_mapping.get(status, (status, "#6c757d"))
+                        percentage = (count / total_buyers * 100) if total_buyers > 0 else 0
+                        status_text += f"{status_fa}: {count} نفر ({percentage:.1f}%)\n"
+                    
+                    self.lbl_status_breakdown.setText(status_text.strip())
+                else:
+                    self.lbl_status_breakdown.setText("📄 هنوز خریداری ثبت نشده است.")
+                    
+            else:
+                # Error handling with user-friendly messages
+                self.lbl_my_buyers.setText("❌ خطا در بارگذاری تعداد خریداران")
+                self.lbl_my_purchased_loans.setText("❌ خطا در بارگذاری وام‌ها")
+                self.lbl_total_amount.setText("❌ خطا در محاسبه مبلغ")
+                self.lbl_success_rate.setText("❌ خطا در محاسبه نرخ")
+                self.lbl_status_breakdown.setText("❌ خطا در بارگذاری اطلاعات")
+            
+        except Exception as e:
+            # Connection error handling
+            error_msg = "🚫 خطا در اتصال به سرور"
+            self.lbl_my_buyers.setText(error_msg)
+            self.lbl_my_purchased_loans.setText(error_msg)
+            self.lbl_total_amount.setText(error_msg)
+            self.lbl_success_rate.setText(error_msg)
+            self.lbl_status_breakdown.setText(f"{error_msg}\nلطفاً اتصال اینترنت خود را بررسی کنید.")
 
     def _build_admin_users_tab(self) -> QWidget:
         widget = QWidget()
@@ -216,9 +658,9 @@ class پنجره_داشبورد(QWidget):
 
         self.tbl_users = QTableWidget(0, 8)
         self.tbl_users.setHorizontalHeaderLabels(["ID", "نام", "کدملی", "نقش", "وضعیت", "مشاهده", "ویرایش", "حذف"]) 
-        self.tbl_users.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.tbl_users.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.tbl_users.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tbl_users.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.tbl_users.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.tbl_users.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.tbl_users.setAlternatingRowColors(True)
         # Increase row height for readability (~double)
         self.tbl_users.verticalHeader().setDefaultSectionSize(45)
@@ -239,7 +681,7 @@ class پنجره_داشبورد(QWidget):
         table_card.setLayout(table_layout)
         layout.addWidget(table_card)
 
-        self.lbl_status = QLabel(""); self.lbl_status.setAlignment(Qt.AlignCenter)
+        self.lbl_status = QLabel(""); self.lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.lbl_status)
 
         widget.setLayout(layout)
@@ -405,7 +847,7 @@ class پنجره_ورود(QWidget):
         self.چیدمان = QVBoxLayout(); self.چیدمان.setSpacing(14)
 
         title = QLabel("به سیستم مدیریت خوش آمدید")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size:20px; font-weight:bold; margin-bottom:6px;")
 
         self.کدملی = QLineEdit(); self.کدملی.setPlaceholderText("کد ملی ۱۰ رقمی")
@@ -414,7 +856,7 @@ class پنجره_ورود(QWidget):
         self.دکمه_ورود = QPushButton("ورود")
         self.دکمه_ورود.setStyleSheet("QPushButton{background:#0d6efd;color:white;padding:8px 14px;border-radius:6px;} QPushButton:hover{background:#0b5ed7}")
 
-        self.برچسب_وضعیت = QLabel(""); self.برچسب_وضعیت.setAlignment(Qt.AlignCenter)
+        self.برچسب_وضعیت = QLabel(""); self.برچسب_وضعیت.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.برچسب_وضعیت.setStyleSheet("color:#dc3545;")
 
         card = QGroupBox("")
@@ -460,6 +902,15 @@ class پنجره_ورود(QWidget):
             display_name = body.get("display_name", "کاربر")
             token = body.get("token")
             logging.info("Login success for national_id: %s | role=%s", national_id, role)
+            # Auto check-in for attendance (session start)
+            try:
+                from client.services import api_client
+            except Exception:
+                from .services import api_client
+            try:
+                api_client.post_json("http://127.0.0.1:5000/api/attendance/check-in", {})
+            except Exception:
+                pass
             # Show dashboard and pass a callback to return to login on logout
             def back_to_login():
                 self.show()

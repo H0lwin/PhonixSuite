@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 import logging
 from flask import Blueprint, request, jsonify, g, current_app
-from models.loan import ensure_loan_schema, create_loan, list_loans, get_loan, update_loan, delete_loan
+from models.loan import ensure_loan_schema, create_loan, list_loans, get_loan, update_loan, delete_loan, list_loans_for_user
 from models.creditor import create_creditor
-from utils.auth import require_roles, require_auth
+from utils.auth import require_roles, require_auth, require_admin, require_admin_or_owner
 
 log = logging.getLogger(__name__)
 
@@ -15,19 +15,32 @@ bp_loans = Blueprint("loans", __name__, url_prefix="/api/loans")
 @bp_loans.get("")
 @require_auth
 def loans_list():
+    """Get loans list based on user role:
+    - Admin: sees all loans with full details
+    - Employee: sees limited fields from available loans only (no purchased loans)
+    """
     user = g.user
-    items = list_loans()
-    # If secretary, restrict fields
-    if user.get("role") == "secretary":
-        allowed = {"id","bank_name","loan_type","duration","amount","loan_status"}
-        items = [{k: v for k, v in it.items() if k in allowed} for it in items]
+    role = user.get("role")
+    user_nid = user.get("national_id")
+    
+    # Use role-based filtering from model
+    items = list_loans_for_user(role, user_nid)
+    
     return jsonify({"status": "success", "items": items})
 
 
 @bp_loans.post("")
-@require_roles("admin")
+@require_admin  # Only admin can create loans
 def loans_create():
+    """Create a new loan (Admin only)"""
+    user = g.user
     data = request.get_json(silent=True, force=True) or {}
+    
+    # Add creator information
+    data["created_by_id"] = user.get("user_id")
+    data["created_by_name"] = user.get("full_name")
+    data["created_by_nid"] = user.get("national_id")
+    
     new_id = create_loan(data)
     return jsonify({"status": "success", "id": new_id})
 
@@ -35,18 +48,31 @@ def loans_create():
 @bp_loans.get("/<int:loan_id>")
 @require_auth
 def loans_get(loan_id: int):
+    """Get loan details:
+    - Admin: sees all details of any loan
+    - Employee: sees limited details of available loans only
+    """
     user = g.user
+    role = user.get("role")
     item = get_loan(loan_id)
+    
     if not item:
         return jsonify({"status": "error", "message": "Not found"}), 404
-    if user.get("role") == "secretary":
+    
+    # Non-admin cannot view purchased loans (they are hidden in list too)
+    if role != "admin" and item.get("loan_status") == "purchased":
+        return jsonify({"status": "error", "message": "Access denied"}), 403
+    
+    # Restrict fields for non-admin users
+    if role != "admin":
         allowed = {"id","bank_name","loan_type","duration","amount","loan_status"}
         item = {k: v for k, v in item.items() if k in allowed}
+    
     return jsonify({"status": "success", "item": item})
 
 
 @bp_loans.patch("/<int:loan_id>")
-@require_roles("admin")
+@require_admin  # Only admin can update loans
 def loans_update(loan_id: int):
     data = request.get_json(silent=True, force=True) or {}
     # Log via both Flask app logger and module logger (root handler also attached)
@@ -108,7 +134,7 @@ def loans_update(loan_id: int):
 
 
 @bp_loans.delete("/<int:loan_id>")
-@require_roles("admin")
+@require_admin  # Only admin can delete loans
 def loans_delete(loan_id: int):
     item = get_loan(loan_id)
     if not item:

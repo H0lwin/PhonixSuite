@@ -29,10 +29,44 @@ from routes.creditors import bp_creditors
 from routes.finance import bp_finance
 from routes.attendance import bp_attendance
 from routes.branches import bp_branches
+from models.activity import ensure_activity_schema, add_log, list_recent, cleanup_old_logs
+from routes.activity import bp_activity
+from models.auth_token import ensure_auth_token_schema, cleanup_expired_tokens
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
 app.config["JSON_SORT_KEYS"] = False
+
+# Global activity logging for mutating requests
+@app.before_request
+def _capture_activity_start():
+    from flask import g, request
+    g._log_mutation = request.method in ("POST", "PUT", "PATCH", "DELETE")
+    if g._log_mutation:
+        try:
+            g._req_body_preview = (request.get_data(as_text=True) or "")[:500]
+        except Exception:
+            g._req_body_preview = None
+
+
+@app.after_request
+def _log_activity_after(response):
+    from flask import g, request
+    try:
+        if getattr(g, "_log_mutation", False):
+            user = getattr(g, "user", None)
+            uid = (user or {}).get("user_id")
+            uname = (user or {}).get("full_name") or (user or {}).get("national_id")
+            status = "success" if (response.status_code < 400) else "error"
+            action = f"{request.method} {request.path}"
+            details = g._req_body_preview or ""
+            try:
+                add_log(uid, uname, action, details, status)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return response
 
 
 # ----- Database bootstrap -----
@@ -133,6 +167,7 @@ def api_login():
     try:
         user = get_employee_by_national_id(national_id)
         if not user or user.get("status") != "active":
+            add_log(None, national_id, "login", "invalid user or inactive", "failure")
             return jsonify({"status": "error", "message": "Invalid credentials"}), 401
 
         # Verify password using bcrypt if possible
@@ -146,11 +181,13 @@ def api_login():
             valid = user.get("password") == password
 
         if not valid:
+            add_log(user.get("id"), user.get("full_name"), "login", "wrong password", "failure")
             return jsonify({"status": "error", "message": "Invalid credentials"}), 401
 
         # Map role for RBAC; accept multiple roles such as admin/secretary/broker/accountant
         role = user.get("role") or "user"
         token = issue_token(user)
+        add_log(user.get("id"), user.get("full_name"), "login", f"role={role}", "success")
         return jsonify({
             "status": "success",
             "role": role,
@@ -159,6 +196,7 @@ def api_login():
         })
     except Exception as exc:
         app.logger.exception("Login error: %s", exc)
+        add_log(None, national_id, "login", "db error", "error")
         return jsonify({"status": "error", "message": "Database error"}), 500
 
 
@@ -179,6 +217,7 @@ app.register_blueprint(bp_creditors)
 app.register_blueprint(bp_finance)
 app.register_blueprint(bp_attendance)
 app.register_blueprint(bp_branches)
+app.register_blueprint(bp_activity)
 
 
 # ----- Bootstrapping and logging -----
@@ -187,12 +226,22 @@ def start_server():
     ensure_database_exists()
     # Ensure all module schemas
     ensure_employee_schema()
+    ensure_auth_token_schema()
     ensure_loan_schema()
     ensure_loan_buyer_schema()
     ensure_creditor_schema()
     ensure_finance_schema()
     from models.attendance import ensure_attendance_schema
     ensure_attendance_schema()
+    ensure_activity_schema()
+    # Cleanup logs and expired tokens
+    cleanup_old_logs()
+    try:
+        removed = cleanup_expired_tokens()
+        if removed:
+            app.logger.info("Auth tokens cleanup: removed %s expired tokens", removed)
+    except Exception:
+        pass
     ensure_admin_wizard()
 
 
