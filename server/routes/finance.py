@@ -40,7 +40,7 @@ def finance_summary(year: int, month: int):
 
 
 @bp_finance.get("/metrics")
-@require_roles("admin", "accountant")
+@require_roles("admin", "accountant", "secretary")
 def finance_metrics():
     """Get key financial metrics for dashboard"""
     try:
@@ -51,7 +51,7 @@ def finance_metrics():
 
 
 @bp_finance.get("/trend")
-@require_roles("admin", "accountant")
+@require_roles("admin", "accountant", "secretary")
 def finance_trend():
     """Get 6-month revenue vs expenses trend"""
     try:
@@ -62,7 +62,7 @@ def finance_trend():
 
 
 @bp_finance.get("/transactions")
-@require_roles("admin", "accountant")
+@require_roles("admin", "accountant", "secretary")
 def finance_transactions():
     """Get all financial transactions (revenues and expenses)"""
     try:

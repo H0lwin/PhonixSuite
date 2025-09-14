@@ -153,7 +153,7 @@ def ensure_admin_wizard(force: bool = False):
 
 # ----- Routes -----
 
-from utils.auth import issue_token, revoke_token, require_auth
+from utils.auth import issue_token, revoke_token, require_auth, require_admin
 
 
 @app.post("/api/auth/login")
@@ -207,6 +207,28 @@ def api_logout():
     token = request.headers.get("X-Auth-Token", "")
     revoke_token(token)
     return jsonify({"status": "success"})
+
+
+@app.get("/api/admin/active-users")
+@require_admin
+def api_active_users():
+    """Return count of currently active sessions (non-expired tokens)."""
+    try:
+        from models.auth_token import cleanup_expired_tokens
+        from database import get_connection
+        # Clean up first (non-blocking if fails)
+        try:
+            cleanup_expired_tokens()
+        except Exception:
+            pass
+        conn = get_connection(True)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM auth_tokens WHERE expires_at > CURRENT_TIMESTAMP")
+        count = int(cur.fetchone()[0] or 0)
+        cur.close(); conn.close()
+        return jsonify({"status": "success", "count": count})
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 500
 
 
 # Register blueprints

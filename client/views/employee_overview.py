@@ -7,7 +7,8 @@
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGroupBox, QHBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGroupBox, QHBoxLayout, QTableWidgetItem, QHeaderView
+from client.components.styled_table import StyledTableWidget
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
@@ -51,12 +52,10 @@ class EmployeeOverview(QWidget):
 
         # Recent activities (limited view)
         box_recent = QGroupBox("فعالیت‌های اخیر")
-        box_recent.setStyleSheet("QGroupBox{font-weight:bold}")
+        box_recent.setStyleSheet("QGroupBox{font-weight:bold; font-size:14px; padding-top:10px;}")
         vr = QVBoxLayout(box_recent); vr.setSpacing(6)
-        self.tbl_recent = QTableWidget(0, 3)
+        self.tbl_recent = StyledTableWidget(0, 3)
         self.tbl_recent.setHorizontalHeaderLabels(["اقدام", "وضعیت", "زمان"]) 
-        self.tbl_recent.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.tbl_recent.setStyleSheet("QHeaderView::section{background:#f8f9fa; padding:6px; border:1px solid #e9ecef;} QTableWidget{background:white;}")
         vr.addWidget(self.tbl_recent)
         v.addWidget(box_recent)
 
@@ -123,10 +122,39 @@ class EmployeeOverview(QWidget):
         for item_data in items[:5]:  # Limit to 5 recent activities
             if isinstance(item_data, dict):  # Safety check
                 r = self.tbl_recent.rowCount(); self.tbl_recent.insertRow(r)
+                
+                # Make action more human-readable
+                action = self._humanize_action(item_data.get("action", ""))
+                
                 vals = [
-                    str(item_data.get("action", "")),
-                    ("موفق" if item_data.get("status") == "success" else "خطا" if item_data.get("status") == "error" else "ناموفق"),
+                    action,
+                    ("✅ موفق" if item_data.get("status") == "success" else "❌ خطا" if item_data.get("status") == "error" else "⚠️ ناموفق"),
                     to_jalali_dt_str(item_data.get("created_at")),
                 ]
                 for c, v in enumerate(vals):
                     self.tbl_recent.setItem(r, c, QTableWidgetItem(v))
+    
+    def _humanize_action(self, action: str) -> str:
+        """Convert technical action names to human-readable Persian"""
+        action_map = {
+            "login": "🔐 ورود به سیستم",
+            "logout": "🚪 خروج از سیستم", 
+            "attendance_check_in": "⏰ ثبت ورود",
+            "attendance_check_out": "⏰ ثبت خروج",
+            "loan_create": "💰 ایجاد وام جدید",
+            "loan_update": "📝 ویرایش وام",
+            "loan_delete": "🗑️ حذف وام",
+            "employee_create": "👤 ایجاد کارمند جدید",
+            "employee_update": "✏️ ویرایش اطلاعات کارمند",
+            "employee_delete": "❌ حذف کارمند",
+            "branch_create": "🏢 ایجاد شعبه جدید",
+            "branch_update": "🏢 ویرایش شعبه",
+            "branch_delete": "🏢 حذف شعبه",
+            "finance_transaction": "💳 تراکنش مالی",
+            "creditor_create": "💰 ایجاد بستانکار",
+            "creditor_update": "💰 ویرایش بستانکار",
+            "creditor_settle": "✅ تسویه بستانکار",
+            "buyer_create": "👥 ثبت خریدار جدید",
+            "buyer_update": "👥 ویرایش خریدار",
+        }
+        return action_map.get(action, f"📋 {action}")

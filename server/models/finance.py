@@ -251,11 +251,10 @@ def get_financial_metrics() -> Dict[str, any]:
 
 
 def get_six_month_trend() -> List[Dict[str, any]]:
-    """Get revenue vs expenses trend for the past 6 months (Jalali month labels)."""
+    """Get revenue vs expenses trend for the past 12 months (Jalali month labels)."""
     conn = get_connection(True)
     cur = conn.cursor()
 
-    # Persian month names for labeling
     persian_months = [
         "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
         "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"
@@ -289,14 +288,13 @@ def get_six_month_trend() -> List[Dict[str, any]]:
             jd = 1 + ((j_day_no - 186) % 30)
         return jy, jm, jd
     
-    # Walk back month-by-month reliably
+    # Walk back month-by-month for a full year
     g_year, g_month = now.year, now.month
-    for _ in range(6):  # current and previous 5
-        # Label by Jalali month/year from first day of Gregorian month
+    for _ in range(12):
         jy, jm, _ = gregorian_to_jalali(g_year, g_month, 1)
         month_label = f"{persian_months[jm-1]} {jy}"
 
-        # Manual revenue and expenses (Gregorian month buckets)
+        # Monthly sums in Gregorian buckets but labeled Jalali
         cur.execute(
             "SELECT COALESCE(SUM(amount), 0) FROM revenues WHERE YEAR(created_at)=%s AND MONTH(created_at)=%s",
             (g_year, g_month)
@@ -308,7 +306,6 @@ def get_six_month_trend() -> List[Dict[str, any]]:
         )
         manual_exp = float(cur.fetchone()[0] or 0)
 
-        # Auto revenue from sold loans in this Gregorian month
         cur.execute(
             """
             SELECT COALESCE(SUM(lb.sale_price - l.purchase_rate), 0)
@@ -332,14 +329,12 @@ def get_six_month_trend() -> List[Dict[str, any]]:
             "profit": revenue - expenses
         })
 
-        # Step one month back
         if g_month == 1:
             g_month = 12
             g_year -= 1
         else:
             g_month -= 1
 
-    # Reverse to chronological order (oldest to newest)
     trend_data.reverse()
     
     cur.close()

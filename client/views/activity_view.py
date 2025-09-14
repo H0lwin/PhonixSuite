@@ -8,9 +8,10 @@ from __future__ import annotations
 from typing import List, Dict, Any
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QComboBox, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QGroupBox
 )
+from client.components.styled_table import StyledTableWidget
 from PySide6.QtCore import Qt
 
 from client.services import api_client
@@ -50,12 +51,8 @@ class ActivityView(QWidget):
         root.addWidget(box)
 
         # Table
-        self.tbl = QTableWidget(0, 5)
+        self.tbl = StyledTableWidget(0, 5)
         self.tbl.setHorizontalHeaderLabels(["زمان", "کاربر", "اقدام", "جزئیات", "وضعیت"]) 
-        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.tbl.verticalHeader().setDefaultSectionSize(42)
         root.addWidget(self.tbl)
 
     def _load_employees(self):
@@ -97,12 +94,59 @@ class ActivityView(QWidget):
         self.tbl.setRowCount(0)
         for it in items:
             row = self.tbl.rowCount(); self.tbl.insertRow(row)
+            
+            # Make action more human-readable
+            action = self._humanize_action(it.get("action", ""))
+            
+            # Make details more readable
+            details = self._humanize_details(it.get("details", ""))
+            
             vals = [
                 to_jalali_dt_str(it.get("created_at")),
                 str(it.get("user_name") or ""),
-                str(it.get("action") or ""),
-                str(it.get("details") or ""),
-                ("موفق" if it.get("status") == "success" else "خطا" if it.get("status") == "error" else "ناموفق"),
+                action,
+                details,
+                ("✅ موفق" if it.get("status") == "success" else "❌ خطا" if it.get("status") == "error" else "⚠️ ناموفق"),
             ]
             for c,v in enumerate(vals):
                 self.tbl.setItem(row, c, QTableWidgetItem(v))
+    
+    def _humanize_action(self, action: str) -> str:
+        """Convert technical action names to human-readable Persian"""
+        action_map = {
+            "login": "🔐 ورود به سیستم",
+            "logout": "🚪 خروج از سیستم", 
+            "attendance_check_in": "⏰ ثبت ورود",
+            "attendance_check_out": "⏰ ثبت خروج",
+            "loan_create": "💰 ایجاد وام جدید",
+            "loan_update": "📝 ویرایش وام",
+            "loan_delete": "🗑️ حذف وام",
+            "employee_create": "👤 ایجاد کارمند جدید",
+            "employee_update": "✏️ ویرایش اطلاعات کارمند",
+            "employee_delete": "❌ حذف کارمند",
+            "branch_create": "🏢 ایجاد شعبه جدید",
+            "branch_update": "🏢 ویرایش شعبه",
+            "branch_delete": "🏢 حذف شعبه",
+            "finance_transaction": "💳 تراکنش مالی",
+            "creditor_create": "💰 ایجاد بستانکار",
+            "creditor_update": "💰 ویرایش بستانکار",
+            "creditor_settle": "✅ تسویه بستانکار",
+        }
+        return action_map.get(action, f"📋 {action}")
+    
+    def _humanize_details(self, details: str) -> str:
+        """Make details more readable"""
+        if not details:
+            return ""
+        
+        # Handle common patterns
+        if "employee_id=" in details:
+            return details.replace("employee_id=", "شناسه کارمند: ")
+        elif "loan_id=" in details:
+            return details.replace("loan_id=", "شناسه وام: ")
+        elif "branch_id=" in details:
+            return details.replace("branch_id=", "شناسه شعبه: ")
+        elif "amount=" in details:
+            return details.replace("amount=", "مبلغ: ")
+        
+        return details

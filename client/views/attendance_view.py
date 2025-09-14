@@ -10,9 +10,10 @@ from typing import List, Dict, Any
 from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QComboBox, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QGroupBox
 )
+from client.components.styled_table import StyledTableWidget
 from PySide6.QtCore import Qt
 
 # Local imports
@@ -21,8 +22,6 @@ from client.components.jalali_date import JalaliDateEdit, gregorian_to_jalali
 
 API_EMP_LIST = "http://127.0.0.1:5000/api/employees"
 API_ATT_ADMIN = "http://127.0.0.1:5000/api/attendance/admin"
-API_ATT_CHECKIN = "http://127.0.0.1:5000/api/attendance/check-in"
-API_ATT_CHECKOUT = "http://127.0.0.1:5000/api/attendance/check-out"
 
 
 def _fmt_hms_total(seconds: int) -> str:
@@ -73,23 +72,11 @@ class AttendanceView(QWidget):
         root.addWidget(filters)
 
         # Table
-        self.tbl = QTableWidget(0, 6)
+        self.tbl = StyledTableWidget(0, 6)
         self.tbl.setHorizontalHeaderLabels(["کارمند", "تاریخ", "ساعت ورود", "ساعت خروج", "مجموع ساعت کاری", "وضعیت حضور"])
-        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.tbl.verticalHeader().setDefaultSectionSize(40)
-        self.tbl.setAlternatingRowColors(True)
         root.addWidget(self.tbl)
 
-        # Quick actions for now (admin manual check-in/out) — optional
-        actions = QHBoxLayout(); actions.setSpacing(8)
-        self.btn_ci = QPushButton("ثبت ورود (ادمین)"); self.btn_ci.clicked.connect(self._admin_check_in)
-        self.btn_co = QPushButton("ثبت خروج (ادمین)"); self.btn_co.clicked.connect(self._admin_check_out)
-        for b in (self.btn_ci, self.btn_co):
-            b.setStyleSheet("QPushButton{background:#198754;color:white;padding:6px 10px;border-radius:4px;} QPushButton:hover{background:#157347}")
-        actions.addStretch(1); actions.addWidget(self.btn_ci); actions.addWidget(self.btn_co)
-        root.addLayout(actions)
+
 
     def _clear_filters(self):
         self.cb_employee.setCurrentIndex(0)
@@ -116,8 +103,9 @@ class AttendanceView(QWidget):
         emp_id = self.cb_employee.currentData()
         if emp_id and emp_id != -1:
             params.append(f"employee_id={emp_id}")
-        df = self.date_from.get_gregorian_iso()
-        dt = self.date_to.get_gregorian_iso()
+        # Only add date filters if the text field is not empty (user has actually selected a date)
+        df = self.date_from.get_gregorian_iso() if self.date_from.le.text().strip() else None
+        dt = self.date_to.get_gregorian_iso() if self.date_to.le.text().strip() else None
         if df:
             params.append(f"date_from={df}")
         if dt:
@@ -159,30 +147,3 @@ class AttendanceView(QWidget):
             for c, v in enumerate(vals):
                 self.tbl.setItem(row, c, QTableWidgetItem(str(v)))
 
-    def _selected_employee_for_action(self) -> int | None:
-        emp_id = self.cb_employee.currentData()
-        return emp_id if (emp_id and emp_id != -1) else None
-
-    def _admin_check_in(self):
-        emp_id = self._selected_employee_for_action()
-        if not emp_id:
-            return
-        payload = {"employee_id": emp_id}
-        try:
-            resp = api_client.post_json(API_ATT_CHECKIN, payload)
-            _ = api_client.parse_json(resp)
-        except Exception:
-            pass
-        self._refresh()
-
-    def _admin_check_out(self):
-        emp_id = self._selected_employee_for_action()
-        if not emp_id:
-            return
-        payload = {"employee_id": emp_id}
-        try:
-            resp = api_client.post_json(API_ATT_CHECKOUT, payload)
-            _ = api_client.parse_json(resp)
-        except Exception:
-            pass
-        self._refresh()

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from flask import Blueprint, request, jsonify, g
 from models.loan_buyer import ensure_loan_buyer_schema, create_loan_buyer, update_loan_buyer, list_loan_buyers_for_user, get_loan_buyer, get_loan_buyer_history, delete_loan_buyer
+from models.activity import add_log
 from utils.auth import require_roles, require_auth, require_admin, require_admin_or_owner
 
 bp_loan_buyers = Blueprint("loan_buyers", __name__, url_prefix="/api/loan-buyers")
@@ -44,8 +45,27 @@ def lb_create():
     if not data.get("broker") and user.get("role") in ["broker", "employee"]:
         data["broker"] = user.get("national_id")
     
-    buyer_id = create_loan_buyer(data)
-    return jsonify({"status": "success", "id": buyer_id})
+    try:
+        buyer_id = create_loan_buyer(data)
+        # Log successful buyer creation
+        add_log(
+            user.get("user_id"), 
+            user.get("full_name"), 
+            "create_buyer", 
+            f"buyer_id={buyer_id}, loan_id={data.get('loan_id')}, name={data.get('full_name')}", 
+            "success"
+        )
+        return jsonify({"status": "success", "id": buyer_id})
+    except Exception as e:
+        # Log failed buyer creation
+        add_log(
+            user.get("user_id"), 
+            user.get("full_name"), 
+            "create_buyer", 
+            f"error: {str(e)}", 
+            "error"
+        )
+        raise
 
 
 @bp_loan_buyers.patch("/<int:buyer_id>")
@@ -68,8 +88,27 @@ def lb_update(buyer_id: int):
         return jsonify({"status": "error", "message": "Not found"}), 404
     cur.close(); conn.close()
     
-    update_loan_buyer(buyer_id, data)
-    return jsonify({"status": "success"})
+    try:
+        update_loan_buyer(buyer_id, data)
+        # Log successful buyer update
+        add_log(
+            user.get("user_id"), 
+            user.get("full_name"), 
+            "update_buyer", 
+            f"buyer_id={buyer_id}", 
+            "success"
+        )
+        return jsonify({"status": "success"})
+    except Exception as e:
+        # Log failed buyer update
+        add_log(
+            user.get("user_id"), 
+            user.get("full_name"), 
+            "update_buyer", 
+            f"buyer_id={buyer_id}, error: {str(e)}", 
+            "error"
+        )
+        raise
 
 
 @bp_loan_buyers.get("/<int:buyer_id>")
@@ -101,5 +140,28 @@ def lb_delete(buyer_id: int):
     - Admin: can delete any record
     - Employee: can only delete their own created records
     """
-    delete_loan_buyer(buyer_id)
-    return jsonify({"status": "success"})
+    user = g.user
+    # Get buyer info before deletion for logging
+    item = get_loan_buyer(buyer_id)
+    
+    try:
+        delete_loan_buyer(buyer_id)
+        # Log successful buyer deletion
+        add_log(
+            user.get("user_id"), 
+            user.get("full_name"), 
+            "delete_buyer", 
+            f"buyer_id={buyer_id}, name={item.get('full_name') if item else 'unknown'}", 
+            "success"
+        )
+        return jsonify({"status": "success"})
+    except Exception as e:
+        # Log failed buyer deletion
+        add_log(
+            user.get("user_id"), 
+            user.get("full_name"), 
+            "delete_buyer", 
+            f"buyer_id={buyer_id}, error: {str(e)}", 
+            "error"
+        )
+        raise

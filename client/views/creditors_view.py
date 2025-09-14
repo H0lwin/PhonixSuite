@@ -91,6 +91,9 @@ class CreditorsView(QWidget):
         self.setStyleSheet("QWidget{background:white;color:black;}")
         self._load_all()
 
+        # Expose a refresh hook so navigation can re-fetch on page load
+        self._load_data = self._load_all
+
     def _open_add(self):
         dlg = CreditorAddDialog(self)
         if dlg.exec():

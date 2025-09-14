@@ -82,7 +82,7 @@ def attendance_check_out():
 
 # Admin filtered list
 @bp_attendance.get("/admin")
-@require_roles("admin", "accountant")
+@require_roles("admin", "accountant", "secretary")
 def attendance_admin_list():
     emp_id = request.args.get("employee_id", type=int)
     df = request.args.get("date_from", type=str)
@@ -101,6 +101,6 @@ def attendance_admin_list():
 
 # Per-employee daily summary
 @bp_attendance.get("/<int:employee_id>")
-@require_roles("admin", "accountant")
+@require_roles("admin", "accountant", "secretary")
 def attendance_list(employee_id: int):
     return jsonify({"status": "success", "items": list_attendance(employee_id)})

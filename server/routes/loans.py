@@ -3,6 +3,7 @@ import logging
 from flask import Blueprint, request, jsonify, g, current_app
 from models.loan import ensure_loan_schema, create_loan, list_loans, get_loan, update_loan, delete_loan, list_loans_for_user
 from models.creditor import create_creditor
+from models.activity import add_log
 from utils.auth import require_roles, require_auth, require_admin, require_admin_or_owner
 
 log = logging.getLogger(__name__)
@@ -41,8 +42,27 @@ def loans_create():
     data["created_by_name"] = user.get("full_name")
     data["created_by_nid"] = user.get("national_id")
     
-    new_id = create_loan(data)
-    return jsonify({"status": "success", "id": new_id})
+    try:
+        new_id = create_loan(data)
+        # Log successful loan creation
+        add_log(
+            user.get("user_id"), 
+            user.get("full_name"), 
+            "create_loan", 
+            f"loan_id={new_id}, bank={data.get('bank_name')}, amount={data.get('amount')}", 
+            "success"
+        )
+        return jsonify({"status": "success", "id": new_id})
+    except Exception as e:
+        # Log failed loan creation
+        add_log(
+            user.get("user_id"), 
+            user.get("full_name"), 
+            "create_loan", 
+            f"error: {str(e)}", 
+            "error"
+        )
+        raise
 
 
 @bp_loans.get("/<int:loan_id>")
@@ -130,14 +150,45 @@ def loans_update(loan_id: int):
             current_app.logger.info("Creditor already exists for loan %s; skipping creation", loan_id)
     else:
         current_app.logger.info("No creditor creation condition met for loan %s (pre_status=%s, post_status=%s)", loan_id, pre_status, post_status)
+    
+    # Log loan update
+    user = g.user
+    add_log(
+        user.get("user_id"), 
+        user.get("full_name"), 
+        "update_loan", 
+        f"loan_id={loan_id}, status_change={pre_status}->{post_status}", 
+        "success"
+    )
     return jsonify({"status": "success"})
 
 
 @bp_loans.delete("/<int:loan_id>")
 @require_admin  # Only admin can delete loans
 def loans_delete(loan_id: int):
+    user = g.user
     item = get_loan(loan_id)
     if not item:
         return jsonify({"status": "error", "message": "Not found"}), 404
-    delete_loan(loan_id)
-    return jsonify({"status": "success"})
+    
+    try:
+        delete_loan(loan_id)
+        # Log successful loan deletion
+        add_log(
+            user.get("user_id"), 
+            user.get("full_name"), 
+            "delete_loan", 
+            f"loan_id={loan_id}, bank={item.get('bank_name')}", 
+            "success"
+        )
+        return jsonify({"status": "success"})
+    except Exception as e:
+        # Log failed loan deletion
+        add_log(
+            user.get("user_id"), 
+            user.get("full_name"), 
+            "delete_loan", 
+            f"loan_id={loan_id}, error: {str(e)}", 
+            "error"
+        )
+        raise

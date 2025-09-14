@@ -1,1 +1,0 @@
-# Marks 'client' as a package so absolute imports like 'client.services...' work.

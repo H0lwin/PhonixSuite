@@ -120,6 +120,9 @@ class BuyersView(QWidget):
 
         self.table.itemSelectionChanged.connect(self._on_row_selected)
 
+        # Expose a refresh hook so navigation can re-fetch on page load
+        self._load_data = (self._reload_current_tab if not self.employee_mode else self._load_active)
+
     def _reload_current_tab(self):
         if self._current_tab == "active":
             # Reset columns to active and reload

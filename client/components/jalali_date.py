@@ -163,9 +163,9 @@ class JalaliDateEdit(QWidget):
         self.btn.setStyleSheet("QPushButton{padding:6px 10px; border:1px solid #ced4da; border-radius:6px; background:#f8f9fa;} QPushButton:hover{background:#e9ecef}")
         h.addWidget(self.le, 1); h.addWidget(self.btn, 0)
         self.btn.clicked.connect(self._open_picker)
-        # default
+        # default - start empty
         self._jy, self._jm, self._jd = 1400, 1, 1
-        self._sync_text()
+        self.le.setText("")  # Start with empty text instead of default date
 
     def _sync_text(self):
         self.le.setText(f"{self._jy:04d}-{self._jm:02d}-{self._jd:02d}")
@@ -199,6 +199,9 @@ class JalaliDateEdit(QWidget):
             return None
 
     def get_gregorian_iso(self) -> Optional[str]:
+        # If text field is empty, return None
+        if not self.le.text().strip():
+            return None
         qd = self.get_gregorian_qdate()
         if not qd:
             return None
@@ -239,3 +242,77 @@ def to_jalali_dt_str(dt_val) -> str:
         return f"{jy:04d}-{jm:02d}-{jd:02d} {hh:02d}:{mm:02d}"
     except Exception:
         return str(dt_val)
+
+def persian_month_name(month: int) -> str:
+    """Get Persian month name"""
+    if 1 <= month <= 12:
+        return PERSIAN_MONTHS[month - 1]
+    return str(month)
+
+def format_persian_currency(amount: float) -> str:
+    """Format currency in Persian with proper separators"""
+    if amount == 0:
+        return "۰ تومان"
+    
+    # Convert to integer for display
+    amount_int = int(amount)
+    
+    # Add thousand separators
+    formatted = f"{amount_int:,}".replace(",", "٬")
+    
+    # Convert digits to Persian
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    
+    for i, digit in enumerate(english_digits):
+        formatted = formatted.replace(digit, persian_digits[i])
+    
+    return f"{formatted} تومان"
+
+def format_persian_number(number: float) -> str:
+    """Format number in Persian"""
+    if number == 0:
+        return "۰"
+    
+    # Format with separators
+    formatted = f"{int(number):,}".replace(",", "٬")
+    
+    # Convert digits to Persian
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    
+    for i, digit in enumerate(english_digits):
+        formatted = formatted.replace(digit, persian_digits[i])
+    
+    return formatted
+
+def get_current_jalali_date() -> str:
+    """Get current date in Jalali format"""
+    from datetime import datetime
+    now = datetime.now()
+    jy, jm, jd = gregorian_to_jalali(now.year, now.month, now.day)
+    return f"{jy}/{jm:02d}/{jd:02d}"
+
+def get_jalali_month_year(date_str: str) -> str:
+    """Convert date string to Persian month and year"""
+    try:
+        if isinstance(date_str, str) and "-" in date_str:
+            parts = date_str.split("-")
+            if len(parts) >= 2:
+                year = int(parts[0])
+                month = int(parts[1])
+                
+                # Convert to Jalali if it's Gregorian
+                if year > 1500:  # Likely Gregorian
+                    from datetime import datetime
+                    try:
+                        gregorian_date = datetime(year, month, 1)
+                        jy, jm, jd = gregorian_to_jalali(year, month, 1)
+                        return f"{persian_month_name(jm)} {jy}"
+                    except:
+                        pass
+                
+                return f"{persian_month_name(month)} {year}"
+        return date_str
+    except:
+        return date_str

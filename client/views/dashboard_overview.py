@@ -9,7 +9,8 @@
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGroupBox, QHBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGroupBox, QHBoxLayout, QTableWidgetItem, QHeaderView
+from client.components.styled_table import StyledTableWidget
 from PySide6.QtCore import Qt, QTimer
 
 from client.services import api_client
@@ -49,7 +50,7 @@ class DashboardOverview(QWidget):
         # Cards container (responsive row)
         cards = QHBoxLayout(); cards.setSpacing(12)
         self.card_total_loans = self._make_card("💰 ارزش کل وام‌ها", "۰ تومان", "مجموع ارزش تمام وام‌های ثبت شده در سیستم.")
-        self.card_active_emps = self._make_card("👤 کارکنان فعال", "0", "تعداد کل کارکنان با وضعیت فعال.")
+        self.card_active_emps = self._make_card("👤 کاربران آنلاین", "0", "کاربران با جلسه فعال (آنلاین).")
         self.card_pending_leave = self._make_card("🕒 در انتظار تأیید", "0", "تعداد درخواست‌های مرخصی در انتظار تأیید.")
         self.card_month_income = self._make_card("📈 درآمد ماهانه", "۰ تومان", "سود تخمینی این ماه (از محاسبات مالی).")
         for c in (self.card_total_loans, self.card_active_emps, self.card_pending_leave, self.card_month_income):
@@ -58,35 +59,76 @@ class DashboardOverview(QWidget):
 
         # Recent activities
         box_recent = QGroupBox("فعالیت‌های اخیر")
-        box_recent.setStyleSheet("QGroupBox{font-weight:bold}")
+        box_recent.setStyleSheet("QGroupBox{font-weight:bold; font-size:14px; padding-top:10px;}")
         vr = QVBoxLayout(box_recent); vr.setSpacing(6)
-        self.tbl_recent = QTableWidget(0, 4)
+        self.tbl_recent = StyledTableWidget(0, 4)
         self.tbl_recent.setHorizontalHeaderLabels(["کاربر", "اقدام", "وضعیت", "زمان"]) 
-        self.tbl_recent.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.tbl_recent.setStyleSheet("QHeaderView::section{background:#f8f9fa; padding:6px; border:1px solid #e9ecef;} QTableWidget{background:white;}")
         vr.addWidget(self.tbl_recent)
         v.addWidget(box_recent)
 
-        # Attendance summary (today)
-        self.box_att = QGroupBox("پیگیری حضور و غیاب (امروز)")
-        self.box_att.setStyleSheet("QGroupBox{font-weight:bold}")
-        va = QVBoxLayout(self.box_att)
+        # Bottom row with two sections side by side
+        bottom_row = QHBoxLayout(); bottom_row.setSpacing(12)
+        
+        # Attendance summary (today) - Left side
+        self.box_att = QGroupBox("📊 پیگیری حضور و غیاب امروز")
+        self.box_att.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold; 
+                font-size: 14px; 
+                border: 1px solid #e9ecef; 
+                border-radius: 8px; 
+                padding-top: 15px;
+                background: white;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top right;
+                padding: 0 8px;
+                color: #495057;
+            }
+        """)
+        va = QVBoxLayout(self.box_att); va.setSpacing(8); va.setContentsMargins(12,12,12,12)
         self.lbl_attendance = QLabel("در حال بارگذاری...")
+        self.lbl_attendance.setStyleSheet("font-size:13px; color:#6c757d; padding:8px;")
         va.addWidget(self.lbl_attendance)
-        v.addWidget(self.box_att)
+        bottom_row.addWidget(self.box_att)
 
-        # Current session (countdown)
-        box_sess = QGroupBox("جلسه کاری فعلی شما")
-        box_sess.setStyleSheet("QGroupBox{font-weight:bold}")
-        vs = QVBoxLayout(box_sess)
+        # Current session (countdown) - Right side
+        box_sess = QGroupBox("⏱️ جلسه کاری فعلی")
+        box_sess.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold; 
+                font-size: 14px; 
+                border: 1px solid #e9ecef; 
+                border-radius: 8px; 
+                padding-top: 15px;
+                background: white;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top right;
+                padding: 0 8px;
+                color: #495057;
+            }
+        """)
+        vs = QVBoxLayout(box_sess); vs.setSpacing(8); vs.setContentsMargins(12,12,12,12)
         disp = client_session.get_display_name() or "کاربر"
-        role = client_session.get_role() or "user"
-        self.lbl_sess_info = QLabel(f"کاربر: {disp} | نقش: {role}")
-        self.lbl_sess_timer = QLabel("زمان باقیمانده: 60:00")
-        self.lbl_sess_timer.setStyleSheet("font-size:14px; font-weight:600")
+        role = "مدیر سیستم" if client_session.get_role() == "admin" else "کارمند"
+        self.lbl_sess_info = QLabel(f"👤 {disp} | 🔑 {role}")
+        self.lbl_sess_info.setStyleSheet("font-size:13px; color:#495057; padding:4px;")
+        self.lbl_sess_timer = QLabel("⏰ زمان باقیمانده: 60:00")
+        self.lbl_sess_timer.setStyleSheet("font-size:14px; font-weight:600; color:#0d6efd; padding:4px;")
         vs.addWidget(self.lbl_sess_info)
         vs.addWidget(self.lbl_sess_timer)
-        v.addWidget(box_sess)
+        bottom_row.addWidget(box_sess)
+        
+        v.addLayout(bottom_row)
+
+        # Periodic refresh: active users count and cards
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setInterval(30000)  # 30s
+        self._refresh_timer.timeout.connect(self._load_cards)
+        self._refresh_timer.start()
 
         # 1-second timer to update countdown when provided
         self._session_countdown = QTimer(self)
@@ -119,25 +161,33 @@ class DashboardOverview(QWidget):
                     pass
         self.card_total_loans._value_label.setText(f"{int(total):,} تومان".replace(",", ","))
 
-        # active employees
+        # online users (active auth tokens)
         try:
-            emps = api_client.parse_json(api_client.get(API_EMP_LIST))
+            resp = api_client.get("http://127.0.0.1:5000/api/admin/active-users")
+            data = api_client.parse_json(resp)
         except Exception:
-            emps = {"status": "error"}
-        active_cnt = 0
-        if emps.get("status") == "success":
-            active_cnt = sum(1 for e in emps.get("items", []) if (e.get("status") == "active"))
-        self._active_count = active_cnt
-        self.card_active_emps._value_label.setText(str(active_cnt))
+            data = {"status": "error"}
+        online_cnt = int(data.get("count") or 0) if data.get("status") == "success" else 0
+        self._active_count = online_cnt
+        self.card_active_emps._value_label.setText(str(online_cnt))
 
         # monthly income (placeholder -> use finance metrics if available)
         try:
-            met = api_client.parse_json(api_client.get(API_FIN_METRICS))
-            if met.get("status") == "success":
-                m = float(met.get("metrics", {}).get("monthly_income", 0))
-                self.card_month_income._value_label.setText(f"{int(m):,} تومان".replace(",", ","))
+            from client.state import session as client_session
+            role = (client_session.get_role() or "").lower()
+            if role not in ("admin", "accountant", "secretary"):
+                self.card_month_income._value_label.setText("محدود")
+            else:
+                resp = api_client.get(API_FIN_METRICS)
+                if resp.status_code == 403:
+                    self.card_month_income._value_label.setText("محدود")
+                else:
+                    met = api_client.parse_json(resp)
+                    if met.get("status") == "success":
+                        m = float(met.get("metrics", {}).get("monthly_income", 0))
+                        self.card_month_income._value_label.setText(f"{int(m):,} تومان".replace(",", ","))
         except Exception:
-            pass
+            self.card_month_income._value_label.setText("خطا")
 
     def _load_recent(self):
         try:
@@ -148,14 +198,41 @@ class DashboardOverview(QWidget):
         self.tbl_recent.setRowCount(0)
         for it in items[:10]:
             r = self.tbl_recent.rowCount(); self.tbl_recent.insertRow(r)
+            
+            # Make action more human-readable
+            action = self._humanize_action(it.get("action", ""))
+            
             vals = [
                 str(it.get("user_name") or ""),
-                str(it.get("action") or ""),
-                ("موفق" if it.get("status") == "success" else "خطا" if it.get("status") == "error" else "ناموفق"),
+                action,
+                ("✅ موفق" if it.get("status") == "success" else "❌ خطا" if it.get("status") == "error" else "⚠️ ناموفق"),
                 to_jalali_dt_str(it.get("created_at")),
             ]
             for c, v in enumerate(vals):
                 self.tbl_recent.setItem(r, c, QTableWidgetItem(v))
+    
+    def _humanize_action(self, action: str) -> str:
+        """Convert technical action names to human-readable Persian"""
+        action_map = {
+            "login": "🔐 ورود به سیستم",
+            "logout": "🚪 خروج از سیستم", 
+            "attendance_check_in": "⏰ ثبت ورود",
+            "attendance_check_out": "⏰ ثبت خروج",
+            "loan_create": "💰 ایجاد وام جدید",
+            "loan_update": "📝 ویرایش وام",
+            "loan_delete": "🗑️ حذف وام",
+            "employee_create": "👤 ایجاد کارمند جدید",
+            "employee_update": "✏️ ویرایش اطلاعات کارمند",
+            "employee_delete": "❌ حذف کارمند",
+            "branch_create": "🏢 ایجاد شعبه جدید",
+            "branch_update": "🏢 ویرایش شعبه",
+            "branch_delete": "🏢 حذف شعبه",
+            "finance_transaction": "💳 تراکنش مالی",
+            "creditor_create": "💰 ایجاد بستانکار",
+            "creditor_update": "💰 ویرایش بستانکار",
+            "creditor_settle": "✅ تسویه بستانکار",
+        }
+        return action_map.get(action, f"📋 {action}")
 
     def _load_attendance_summary(self):
         # Today in ISO

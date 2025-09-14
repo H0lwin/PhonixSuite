@@ -52,7 +52,7 @@ API_EMP_CREATE = "http://127.0.0.1:5000/api/employees"
 class پنجره_داشبورد(QWidget):
     def __init__(self, نمایش_نام: str, نقش: str, توکن: str, بازگشت_به_ورود):
         super().__init__()
-        self.setWindowTitle("داشبورد")
+        self.setWindowTitle("Phoenix")
         # Fullscreen layout per requirements
         self.showMaximized()
         self.بازگشت_به_ورود = بازگشت_به_ورود
@@ -63,6 +63,9 @@ class پنجره_داشبورد(QWidget):
         except Exception:
             from .state import session as _session
         _session.set_session(توکن, نقش, نمایش_نام)
+
+        # Auto check-in on login
+        self._auto_check_in()
 
         # Start 60-min session timer; on timeout, force relogin
         self._session_timer = QTimer(self)
@@ -157,10 +160,7 @@ class پنجره_داشبورد(QWidget):
             from client.views.activity_view import ActivityView as _ActivityView
             act_page = _ActivityView()
             self._page_index_map["گزارش فعالیت"] = self.content_stack.addWidget(act_page)
-            # Other placeholders
-            for title in ["تنظیمات"]:
-                item = QTreeWidgetItem([title]); root_admin.addChild(item)
-                self._page_index_map[title] = add_placeholder(title)
+            # تنظیمات حذف شد - نیازی نیست
             # Creditors real page
             creditors_item = QTreeWidgetItem(["بستانکاران"]); root_admin.addChild(creditors_item)
             from client.views.creditors_view import CreditorsView as _CreditorsView
@@ -207,7 +207,14 @@ class پنجره_داشبورد(QWidget):
                 return
             idx = (self._page_index_map or {}).get(title)
             if idx is not None:
+                # Ensure page refresh on each navigation
                 self.content_stack.setCurrentIndex(idx)
+                try:
+                    w = self.content_stack.widget(idx)
+                    if hasattr(w, "_load_data") and callable(getattr(w, "_load_data")):
+                        w._load_data()
+                except Exception:
+                    pass
         self.nav_tree.itemClicked.connect(on_tree_item_clicked)
 
         # Default page selection
@@ -274,6 +281,15 @@ class پنجره_داشبورد(QWidget):
     def _on_session_timeout(self):
         # Force relogin after 60 minutes
         self._logout("برای ادامه کار دوباره وارد شوید (Login again)")
+    
+    def _auto_check_in(self):
+        """Automatically check-in user when they log in"""
+        try:
+            from client.services import api_client
+            api_client.post_json("http://127.0.0.1:5000/api/attendance/check-in", {}, timeout=3)
+        except Exception:
+            # Ignore errors during auto check-in to not disrupt login flow
+            pass
     
     def _build_employee_overview(self, display_name: str) -> QWidget:
         """Build simple overview for employee users"""
@@ -841,7 +857,7 @@ class پنجره_داشبورد(QWidget):
 class پنجره_ورود(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ورود")
+        self.setWindowTitle("Phoenix - ورود")
         QApplication.instance().setLayoutDirection(Qt.RightToLeft)
 
         self.چیدمان = QVBoxLayout(); self.چیدمان.setSpacing(14)

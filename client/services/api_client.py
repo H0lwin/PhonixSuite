@@ -27,6 +27,9 @@ def get(url: str, timeout: int = DEFAULT_TIMEOUT) -> requests.Response:
 def post_json(url: str, payload: Dict[str, Any], timeout: int = DEFAULT_TIMEOUT) -> requests.Response:
     return requests.post(url, headers=_headers(), data=json.dumps(payload).encode("utf-8"), timeout=timeout)
 
+# Backwards-compat alias
+post = post_json
+
 
 def delete(url: str, timeout: int = DEFAULT_TIMEOUT) -> requests.Response:
     return requests.delete(url, headers=_headers(), timeout=timeout)

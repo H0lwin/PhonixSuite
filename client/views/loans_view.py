@@ -5,6 +5,8 @@ from PySide6.QtWidgets import (
     QComboBox, QDoubleSpinBox, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QGroupBox, QTabWidget, QAbstractSpinBox
 )
+from client.components.advanced_table import AdvancedTable
+from client.components.jalali_date import format_persian_currency, to_jalali_dt_str
 from PySide6.QtCore import Qt, QLocale
 
 from ..services import api_client
@@ -87,24 +89,15 @@ class LoansView(QWidget):
 
         # Adjust table columns based on mode
         if self.employee_mode:
-            # Employee sees limited columns: Bank Name | Loan Type | Duration | Amount | Status
-            self.table = QTableWidget(0, 5)
-            self.table.setHorizontalHeaderLabels([
-                "بانک", "نوع وام", "مدت", "مبلغ", "وضعیت"
-            ])
+            # Employee sees limited columns
+            headers = ["بانک", "نوع وام", "مدت", "مبلغ", "وضعیت"]
+            self.table = AdvancedTable(headers)
         else:
             # Admin sees all columns
-            self.table = QTableWidget(0, 10)
-            self.table.setHorizontalHeaderLabels([
-                "ID", "بانک", "نوع", "مدت", "مبلغ", "مالک", "وضعیت", "نمایش", "ویرایش", "حذف"
-            ])
-            
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setDefaultSectionSize(int(55))
-        self.table.setStyleSheet("QTableWidget{background:white;} QHeaderView::section{background:#f8f9fa; padding:6px; border:1px solid #e9ecef;} QTableWidget::item{padding:10px;}")
+            headers = ["ID", "بانک", "نوع", "مدت", "مبلغ", "مالک", "وضعیت"]
+            self.table = AdvancedTable(headers)
+            self.table.add_action_column(["نمایش", "ویرایش", "حذف"])
+            self.table.action_clicked.connect(self._on_loan_action)
         card_layout.addWidget(self.table)
 
         # Controls under table - adjusted for employee mode
@@ -134,16 +127,10 @@ class LoansView(QWidget):
             history_card.setStyleSheet("QGroupBox{font-weight:bold; border:1px solid #ddd; border-radius:6px; margin-top:10px;} QGroupBox::title{subcontrol-origin: margin; subcontrol-position: top right; padding: 0 8px;}")
             history_card_layout = QVBoxLayout(); history_card_layout.setSpacing(8)
 
-            self.table_history = QTableWidget(0, 10)
-            self.table_history.setHorizontalHeaderLabels([
-                "ID", "بانک", "نوع", "مدت", "مبلغ", "مالک", "وضعیت", "نمایش", "ویرایش", "حذف"
-            ])
-            self.table_history.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-            self.table_history.setEditTriggers(QAbstractItemView.NoEditTriggers)
-            self.table_history.setSelectionBehavior(QAbstractItemView.SelectRows)
-            self.table_history.setAlternatingRowColors(True)
-            self.table_history.verticalHeader().setDefaultSectionSize(int(55))
-            self.table_history.setStyleSheet("QTableWidget{background:white;} QHeaderView::section{background:#f8f9fa; padding:6px; border:1px solid #e9ecef;} QTableWidget::item{padding:10px;}")
+            history_headers = ["ID", "بانک", "نوع", "مدت", "مبلغ", "مالک", "وضعیت"]
+            self.table_history = AdvancedTable(history_headers)
+            self.table_history.add_action_column(["نمایش", "ویرایش", "حذف"])
+            self.table_history.action_clicked.connect(self._on_loan_action)
             history_card_layout.addWidget(self.table_history)
 
             history_controls = QHBoxLayout()
@@ -161,6 +148,9 @@ class LoansView(QWidget):
 
         self._all: List[Dict[str, Any]] = []
         self._load_loans()
+
+        # Expose a refresh hook so navigation can re-fetch on page load
+        self._load_data = self._load_loans
 
     def _populate_filter_values(self):
         # Fill bank/type/duration from data
@@ -244,97 +234,84 @@ class LoansView(QWidget):
 
     def _render_active(self, items: List[Dict[str, Any]]):
         # Render Active Loans (non-purchased) in main table
-        self.table.setRowCount(0)
+        table_data = []
+        
         for it in items:
-            row = self.table.rowCount(); self.table.insertRow(row)
-            rid = it.get("id", "")
-            
             if self.employee_mode:
-                # Employee mode: Bank Name | Loan Type | Duration | Amount | Status (no ID, no actions)
-                self.table.setItem(row, 0, QTableWidgetItem(it.get("bank_name", "")))
-                self.table.setItem(row, 1, QTableWidgetItem(it.get("loan_type", "")))
-                self.table.setItem(row, 2, QTableWidgetItem(it.get("duration", "")))
-                
-                # Amount formatting
-                try:
-                    amt = float(it.get("amount") or 0); amt_txt = f"{amt:,.2f}"
-                except Exception:
-                    amt_txt = str(it.get("amount", ""))
-                item_amt = QTableWidgetItem(amt_txt)
-                item_amt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.table.setItem(row, 3, item_amt)
-                
-                self.table.setItem(row, 4, QTableWidgetItem(t_status(it.get("loan_status", ""))))
-                
+                # Employee mode: Bank Name | Loan Type | Duration | Amount | Status
+                table_data.append({
+                    "بانک": it.get("bank_name", ""),
+                    "نوع وام": it.get("loan_type", ""),
+                    "مدت": it.get("duration", ""),
+                    "مبلغ": format_persian_currency(float(it.get("amount", 0))),
+                    "وضعیت": self._get_status_display(it.get("loan_status", ""))
+                })
             else:
-                # Admin mode: Base columns that both admin and employee see
-                self.table.setItem(row, 0, QTableWidgetItem(str(rid)))
-                self.table.setItem(row, 1, QTableWidgetItem(it.get("bank_name", "")))
-                self.table.setItem(row, 2, QTableWidgetItem(it.get("loan_type", "")))
-                self.table.setItem(row, 3, QTableWidgetItem(it.get("duration", "")))
-                
-                # Amount formatting
-                try:
-                    amt = float(it.get("amount") or 0); amt_txt = f"{amt:,.2f}"
-                except Exception:
-                    amt_txt = str(it.get("amount", ""))
-                item_amt = QTableWidgetItem(amt_txt)
-                item_amt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.table.setItem(row, 4, item_amt)
-                
-                # Admin mode: full columns and actions
-                self.table.setItem(row, 5, QTableWidgetItem(it.get("owner_full_name", "")))
-                self.table.setItem(row, 6, QTableWidgetItem(t_status(it.get("loan_status", ""))))
-                
-                # All action buttons for admin
-                btn_view = QPushButton("نمایش"); btn_edit = QPushButton("ویرایش"); btn_del = QPushButton("حذف")
-                for b, c in ((btn_view, "#198754"), (btn_edit, "#0d6efd"), (btn_del, "#dc3545")):
-                    b.setStyleSheet(f"QPushButton{{background:{c};color:white;padding:6px 10px;border-radius:4px;}} QPushButton:hover{{opacity:0.9}}")
-                
-                btn_view.clicked.connect(lambda _, id_=rid: self._open_view(id_))
-                btn_edit.clicked.connect(lambda _, id_=rid: self._open_edit(id_))
-                btn_del.clicked.connect(lambda _, id_=rid: self._delete(id_))
-                
-                self.table.setCellWidget(row, 7, btn_view)
-                self.table.setCellWidget(row, 8, btn_edit)
-                self.table.setCellWidget(row, 9, btn_del)
+                # Admin mode: ID | Bank | Type | Duration | Amount | Owner | Status
+                table_data.append({
+                    "id": it.get("id", ""),
+                    "بانک": it.get("bank_name", ""),
+                    "نوع": it.get("loan_type", ""),
+                    "مدت": it.get("duration", ""),
+                    "مبلغ": format_persian_currency(float(it.get("amount", 0))),
+                    "مالک": it.get("owner_full_name", ""),
+                    "وضعیت": self._get_status_display(it.get("loan_status", ""))
+                })
+        
+        self.table.set_data(table_data)
 
     def _render_history(self, items: List[Dict[str, Any]]):
         # Render purchased loans in history table
-        self.table_history.setRowCount(0)
+        table_data = []
+        
         for it in items:
-            row = self.table_history.rowCount(); self.table_history.insertRow(row)
-            rid = it.get("id", "")
-            self.table_history.setItem(row, 0, QTableWidgetItem(str(rid)))
-            self.table_history.setItem(row, 1, QTableWidgetItem(it.get("bank_name", "")))
-            self.table_history.setItem(row, 2, QTableWidgetItem(it.get("loan_type", "")))
-            self.table_history.setItem(row, 3, QTableWidgetItem(it.get("duration", "")))
-            # amount formatting
-            try:
-                amt = float(it.get("amount") or 0); amt_txt = f"{amt:,.2f}"
-            except Exception:
-                amt_txt = str(it.get("amount", ""))
-            item_amt = QTableWidgetItem(amt_txt)
-            item_amt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.table_history.setItem(row, 4, item_amt)
-            self.table_history.setItem(row, 5, QTableWidgetItem(it.get("owner_full_name", "")))
-            self.table_history.setItem(row, 6, QTableWidgetItem(t_status(it.get("loan_status", ""))))
-            # actions (reuse same handlers)
-            btn_view = QPushButton("نمایش"); btn_edit = QPushButton("ویرایش"); btn_del = QPushButton("حذف")
-            for b, c in ((btn_view, "#198754"), (btn_edit, "#0d6efd"), (btn_del, "#dc3545")):
-                b.setStyleSheet(f"QPushButton{{background:{c};color:white;padding:6px 10px;border-radius:4px;}} QPushButton:hover{{opacity:0.9}}")
-            def _make_view(id_):
-                return lambda: self._open_view(id_)
-            def _make_edit(id_):
-                return lambda: self._open_edit(id_)
-            def _make_del(id_):
-                return lambda: self._delete(id_)
-            btn_view.clicked.connect(_make_view(rid))
-            btn_edit.clicked.connect(_make_edit(rid))
-            btn_del.clicked.connect(_make_del(rid))
-            self.table_history.setCellWidget(row, 7, btn_view)
-            self.table_history.setCellWidget(row, 8, btn_edit)
-            self.table_history.setCellWidget(row, 9, btn_del)
+            table_data.append({
+                "id": it.get("id", ""),
+                "بانک": it.get("bank_name", ""),
+                "نوع": it.get("loan_type", ""),
+                "مدت": it.get("duration", ""),
+                "مبلغ": format_persian_currency(float(it.get("amount", 0))),
+                "مالک": it.get("owner_full_name", ""),
+                "وضعیت": self._get_status_display(it.get("loan_status", ""))
+            })
+        
+        self.table_history.set_data(table_data)
+    
+    def _get_status_display(self, status: str) -> str:
+        """Convert status to Persian display"""
+        status_map = {
+            "available": "🟢 موجود",
+            "pending": "🟡 در انتظار",
+            "purchased": "🔴 خریداری شده",
+            "cancelled": "❌ لغو شده"
+        }
+        return status_map.get(status.lower(), status)
+    
+    def _on_loan_action(self, action: str, row_index: int):
+        """Handle loan table actions"""
+        # Get loan data from the original data
+        # We need to find the loan by matching the displayed data with original data
+        if hasattr(self, '_all') and self._all:
+            # Get the current page data
+            current_page = getattr(self.table, 'current_page', 0)
+            rows_per_page = getattr(self.table, 'rows_per_page', 20)
+            start_idx = current_page * rows_per_page
+            actual_index = start_idx + row_index
+            
+            # Get filtered data (active loans)
+            filtered = [it for it in self._all if str(it.get("loan_status", "")).lower() != "purchased"]
+            
+            if actual_index < len(filtered):
+                loan_data = filtered[actual_index]
+                loan_id = loan_data.get("id")
+                
+                if loan_id:
+                    if action == "نمایش":
+                        self._open_view(int(loan_id))
+                    elif action == "ویرایش":
+                        self._open_edit(int(loan_id))
+                    elif action == "حذف":
+                        self._delete(int(loan_id))
 
     def _open_add(self):
         dlg = LoanAddDialog(self)
