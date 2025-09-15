@@ -237,6 +237,37 @@ def get_net_profit_with_comparison(year: int, month: int) -> Dict[str, any]:
     }
 
 
+def get_monthly_expenses_with_comparison(year: int, month: int) -> Dict[str, any]:
+    """Get current month expenses with comparison to previous month (percentage)."""
+    conn = get_connection(True)
+    cur = conn.cursor()
+    
+    # Current month expenses
+    cur.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE YEAR(created_at)=%s AND MONTH(created_at)=%s",
+        (year, month)
+    )
+    current_exp = float(cur.fetchone()[0] or 0)
+    
+    # Previous month
+    from datetime import datetime, timedelta
+    prev_date = datetime(year, month, 1) - timedelta(days=1)
+    cur.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE YEAR(created_at)=%s AND MONTH(created_at)=%s",
+        (prev_date.year, prev_date.month)
+    )
+    prev_exp = float(cur.fetchone()[0] or 0)
+    
+    change = 0.0
+    if prev_exp > 0:
+        change = ((current_exp - prev_exp) / prev_exp) * 100
+    elif current_exp > 0:
+        change = 100.0
+    
+    cur.close(); conn.close()
+    return {"amount": current_exp, "percentage_change": round(change, 1)}
+
+
 def get_financial_metrics() -> Dict[str, any]:
     """Get all key financial metrics for the dashboard"""
     now = datetime.now()
@@ -246,6 +277,7 @@ def get_financial_metrics() -> Dict[str, any]:
     return {
         "total_creditors": get_total_unpaid_creditors(),
         "monthly_revenue": get_monthly_revenue_with_comparison(current_year, current_month),
+        "monthly_expenses": get_monthly_expenses_with_comparison(current_year, current_month),
         "net_profit": get_net_profit_with_comparison(current_year, current_month)
     }
 

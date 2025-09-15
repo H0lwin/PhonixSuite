@@ -8,10 +8,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate, QLocale
 
 # Local API client (injects token)
-from ..services import api_client
-from ..utils.styles import style_dialog_buttons
+from client.services import api_client
+from client.utils.styles import style_dialog_buttons
 
-API_LOANS = "http://127.0.0.1:5000/api/loans"
+API_LOANS = "/api/loans"
 
 
 def _status_to_value(index: int) -> str:
@@ -49,8 +49,9 @@ class LoanAddDialog(QDialog):
         form = QFormLayout(); form.setLabelAlignment(Qt.AlignRight)
 
         self.in_bank_name = QLineEdit(); self.in_bank_name.setPlaceholderText("مثال: بانک سرمایه")
-        self.cb_loan_type = QComboBox(); self.cb_loan_type.setEditable(True); self.cb_loan_type.addItems(["Personal", "Mortgage", "Auto", "Business"])  # editable
-        self.in_duration = QLineEdit(); self.in_duration.setPlaceholderText("مثال: 24 months")
+        # Editable Persian loan types (typed freely); value saved as typed text
+        self.cb_loan_type = QComboBox(); self.cb_loan_type.setEditable(True); self.cb_loan_type.addItems(["شخصی", "مسکن", "خودرو", "کسب‌وکار"])  # editable suggestions
+        self.in_duration = QLineEdit(); self.in_duration.setPlaceholderText("مثال: 24 ماه")
         self.in_amount = QDoubleSpinBox(); self.in_amount.setRange(0, 10_000_000_000); self.in_amount.setDecimals(2)
         self.in_amount.setLocale(QLocale(QLocale.English))
         self.in_amount.setButtonSymbols(QAbstractSpinBox.NoButtons)
@@ -58,15 +59,21 @@ class LoanAddDialog(QDialog):
         self.in_amount.setStyleSheet("QDoubleSpinBox{padding:6px 8px;}")
         self.in_owner = QLineEdit(); self.in_owner.setPlaceholderText("مثال: علی مرادی")
         self.in_phone = QLineEdit(); self.in_phone.setPlaceholderText("مثال: 09123456789")
-        from .jalali_date import JalaliDateEdit
+        from client.components.jalali_date import JalaliDateEdit
         self.in_visit_date = JalaliDateEdit()
         self.in_visit_date.set_from_gregorian(QDate.currentDate())
         # Larger, styled date field
         self.in_visit_date.setStyleSheet("QLineEdit{padding:8px 10px; border:1px solid #ced4da; border-radius:6px; font-size:13px;} QPushButton{padding:6px 10px;}")
-        self.cb_status = QComboBox(); self.cb_status.addItems(["Available", "Failed", "Purchased"])
+        # وضعیت وام با نمایش فارسی و مقدار انگلیسی برای ذخیره
+        self.cb_status = QComboBox();
+        self.cb_status.addItem("🟢 موجود", "available")
+        self.cb_status.addItem("❌ ناموفق", "failed")
+        self.cb_status.addItem("🔴 خریداری شده", "purchased")
         self.in_referrer = QLineEdit(); self.in_referrer.setPlaceholderText("مثال: رضا قاسمی")
-        self.cb_payment_type = QComboBox(); self.cb_payment_type.setEditable(True); self.cb_payment_type.addItems(["Cash", "Installment", "Card"])  # editable
-        self.in_purchase_rate = QDoubleSpinBox(); self.in_purchase_rate.setRange(0, 1000000000); self.in_purchase_rate.setDecimals(2)
+        # نوع پرداخت: تایپی با پیشنهادهای فارسی (حذف گزینه کارت)
+        self.cb_payment_type = QComboBox(); self.cb_payment_type.setEditable(True); self.cb_payment_type.addItems(["نقدی", "اقساطی"])  # editable suggestions
+        # نرخ خرید: تومان، بدون اعشار
+        self.in_purchase_rate = QDoubleSpinBox(); self.in_purchase_rate.setRange(0, 1_000_000_000); self.in_purchase_rate.setDecimals(0); self.in_purchase_rate.setSuffix(" تومان")
         self.in_purchase_rate.setLocale(QLocale(QLocale.English))
         self.in_purchase_rate.setButtonSymbols(QAbstractSpinBox.NoButtons)
         self.in_purchase_rate.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -130,7 +137,8 @@ class LoanEditDialog(QDialog):
         form = QFormLayout(); form.setLabelAlignment(Qt.AlignRight)
 
         self.in_bank_name = QLineEdit(self._item.get("bank_name", ""))
-        self.cb_loan_type = QComboBox(); self.cb_loan_type.setEditable(True); self.cb_loan_type.addItems(["Personal", "Mortgage", "Auto", "Business"])  # editable
+        # Editable Persian loan types (typed freely); value saved as typed text
+        self.cb_loan_type = QComboBox(); self.cb_loan_type.setEditable(True); self.cb_loan_type.addItems(["شخصی", "مسکن", "خودرو", "کسب‌وکار"])  # editable suggestions
         idx = self.cb_loan_type.findText(self._item.get("loan_type", ""))
         if idx >= 0: self.cb_loan_type.setCurrentIndex(idx)
         self.in_duration = QLineEdit(self._item.get("duration", ""))
@@ -145,7 +153,7 @@ class LoanEditDialog(QDialog):
             self.in_amount.setValue(0)
         self.in_owner = QLineEdit(self._item.get("owner_full_name", ""))
         self.in_phone = QLineEdit(self._item.get("owner_phone", ""))
-        from .jalali_date import JalaliDateEdit
+        from client.components.jalali_date import JalaliDateEdit
         self.in_visit_date = JalaliDateEdit()
         try:
             if self._item.get("visit_date"):
@@ -156,13 +164,18 @@ class LoanEditDialog(QDialog):
             self.in_visit_date.set_from_gregorian(QDate.currentDate())
         # Larger, styled date field
         self.in_visit_date.setStyleSheet("QLineEdit{padding:8px 10px; border:1px solid #ced4da; border-radius:6px; font-size:13px;} QPushButton{padding:6px 10px;}")
-        self.cb_status = QComboBox(); self.cb_status.addItems(["Available", "Failed", "Purchased"]) 
+        self.cb_status = QComboBox();
+        self.cb_status.addItem("🟢 موجود", "available")
+        self.cb_status.addItem("❌ ناموفق", "failed")
+        self.cb_status.addItem("🔴 خریداری شده", "purchased") 
         self.cb_status.setCurrentIndex(_value_to_status(self._item.get("loan_status")))
         self.in_referrer = QLineEdit(self._item.get("introducer", ""))
-        self.cb_payment_type = QComboBox(); self.cb_payment_type.setEditable(True); self.cb_payment_type.addItems(["Cash", "Installment", "Card"])  # editable
+        # نوع پرداخت: تایپی با پیشنهادهای فارسی
+        self.cb_payment_type = QComboBox(); self.cb_payment_type.setEditable(True); self.cb_payment_type.addItems(["نقدی", "اقساطی", "کارت"])  # editable suggestions
         idx = self.cb_payment_type.findText(self._item.get("payment_type", ""))
         if idx >= 0: self.cb_payment_type.setCurrentIndex(idx)
-        self.in_purchase_rate = QDoubleSpinBox(); self.in_purchase_rate.setRange(0, 1000000000); self.in_purchase_rate.setDecimals(2)
+        # نرخ خرید: تومان، بدون اعشار
+        self.in_purchase_rate = QDoubleSpinBox(); self.in_purchase_rate.setRange(0, 1_000_000_000); self.in_purchase_rate.setDecimals(0); self.in_purchase_rate.setSuffix(" تومان")
         self.in_purchase_rate.setLocale(QLocale(QLocale.English))
         self.in_purchase_rate.setButtonSymbols(QAbstractSpinBox.NoButtons)
         self.in_purchase_rate.setAlignment(Qt.AlignRight | Qt.AlignVCenter)

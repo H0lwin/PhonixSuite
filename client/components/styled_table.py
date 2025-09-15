@@ -39,6 +39,7 @@ class StyledTableWidget(QTableWidget):
             QTableWidget::item {
                 padding: 8px 12px;
                 border-bottom: 1px solid #f1f3f4;
+                color: #212529; /* ensure visible text color */
             }
             QTableWidget::item:selected {
                 background-color: #0d6efd;

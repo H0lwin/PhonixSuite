@@ -8,11 +8,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QLocale
 
 # Local API client (injects token)
-from ..services import api_client
-from ..utils.styles import style_dialog_buttons
+from client.services import api_client
+from client.utils.styles import style_dialog_buttons
 
-API_EMP_META = "http://127.0.0.1:5000/api/employees/meta"
-API_EMP = "http://127.0.0.1:5000/api/employees"
+API_EMP_META = "/api/employees/meta"
+API_EMP = "/api/employees"
 
 
 def _load_meta() -> Dict[str, Any]:

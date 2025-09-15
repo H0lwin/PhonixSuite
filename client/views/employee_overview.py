@@ -16,10 +16,10 @@ from client.services import api_client
 from client.state import session as client_session
 from client.components.jalali_date import to_jalali_dt_str
 
-API_LOANS = "http://127.0.0.1:5000/api/loans"
-API_BUYERS = "http://127.0.0.1:5000/api/loan-buyers"
-API_CREDITORS = "http://127.0.0.1:5000/api/creditors"
-API_RECENT = "http://127.0.0.1:5000/api/activity"
+API_LOANS = "/api/loans"
+API_BUYERS = "/api/loan-buyers"
+API_CREDITORS = "/api/creditors"
+API_RECENT = "/api/activity"
 
 
 class EmployeeOverview(QWidget):

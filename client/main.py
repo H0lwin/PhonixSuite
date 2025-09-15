@@ -44,9 +44,9 @@ class GlobalSignals(QObject):
     
 global_signals = GlobalSignals()
 
-API_LOGIN = "http://127.0.0.1:5000/api/auth/login"
-API_EMP_META = "http://127.0.0.1:5000/api/employees/meta"
-API_EMP_CREATE = "http://127.0.0.1:5000/api/employees"
+API_LOGIN = "/api/auth/login"
+API_EMP_META = "/api/employees/meta"
+API_EMP_CREATE = "/api/employees"
 
 
 class پنجره_داشبورد(QWidget):
@@ -61,7 +61,7 @@ class پنجره_داشبورد(QWidget):
         try:
             from client.state import session as _session
         except Exception:
-            from .state import session as _session
+            from client.state import session as _session
         _session.set_session(توکن, نقش, نمایش_نام)
 
         # Auto check-in on login
@@ -73,6 +73,12 @@ class پنجره_داشبورد(QWidget):
         self._session_timer.setSingleShot(True)
         self._session_timer.timeout.connect(self._on_session_timeout)
         self._session_timer.start()
+
+        # Heartbeat timer: keeps attendance session alive and crash-safe
+        self._heartbeat_timer = QTimer(self)
+        self._heartbeat_timer.setInterval(60 * 1000)  # every 60s
+        self._heartbeat_timer.timeout.connect(self._send_heartbeat)
+        self._heartbeat_timer.start()
 
         # Two-column layout: right sidebar (navigation), left content stack
         root = QHBoxLayout()
@@ -211,7 +217,10 @@ class پنجره_داشبورد(QWidget):
                 self.content_stack.setCurrentIndex(idx)
                 try:
                     w = self.content_stack.widget(idx)
-                    if hasattr(w, "_load_data") and callable(getattr(w, "_load_data")):
+                    # Prefer a generic refresh method if present
+                    if hasattr(w, "_refresh") and callable(getattr(w, "_refresh")):
+                        w._refresh()
+                    elif hasattr(w, "_load_data") and callable(getattr(w, "_load_data")):
                         w._load_data()
                 except Exception:
                     pass
@@ -232,28 +241,29 @@ class پنجره_داشبورد(QWidget):
         self.setLayout(root)
 
     def _logout(self, relogin_message: str | None = None):
+        # Use centralized client (will inject token)
+        from client.services import api_client
+        
+        # Stop heartbeat to avoid extra calls during logout
         try:
-            # Use centralized client (will inject token)
-            from client.services import api_client
+            if hasattr(self, "_heartbeat_timer"):
+                self._heartbeat_timer.stop()
         except Exception:
-            from .services import api_client
+            pass
         
         # Auto check-out on logout with shorter timeout to prevent hanging
         try:
-            api_client.post_json("http://127.0.0.1:5000/api/attendance/check-out", {}, timeout=2)
+            api_client.post_json("/api/attendance/check-out", {}, timeout=2)
         except Exception:
             pass  # Ignore errors during logout
         
         try:
-            api_client.post_json("http://127.0.0.1:5000/api/auth/logout", {}, timeout=2)
+            api_client.post_json("/api/auth/logout", {}, timeout=2)
         except Exception:
             pass  # Ignore errors during logout
         
         # Clear session first to prevent further API calls
-        try:
-            from client.state import session as _session
-        except Exception:
-            from .state import session as _session
+        from client.state import session as _session
         _session.clear_session()
         
         # Close dashboard and return to login
@@ -286,9 +296,18 @@ class پنجره_داشبورد(QWidget):
         """Automatically check-in user when they log in"""
         try:
             from client.services import api_client
-            api_client.post_json("http://127.0.0.1:5000/api/attendance/check-in", {}, timeout=3)
+            api_client.post_json("/api/attendance/check-in", {}, timeout=3)
         except Exception:
             # Ignore errors during auto check-in to not disrupt login flow
+            pass
+
+    def _send_heartbeat(self):
+        """Ping server to keep today's session alive and update last activity time."""
+        try:
+            from client.services import api_client
+            api_client.post_json("/api/attendance/heartbeat", {}, timeout=2)
+        except Exception:
+            # do not spam logs; heartbeat is best-effort
             pass
     
     def _build_employee_overview(self, display_name: str) -> QWidget:
@@ -577,7 +596,7 @@ class پنجره_داشبورد(QWidget):
             from client.services import api_client
             
             # Get own buyers count and status breakdown
-            r = api_client.get("http://127.0.0.1:5000/api/loan-buyers")
+            r = api_client.get("/api/loan-buyers")
             data = r.json()
             if data.get("status") == "success":
                 buyers = data.get("items", [])
@@ -709,12 +728,9 @@ class پنجره_داشبورد(QWidget):
         return widget
 
     def _load_meta(self):
+        # Use centralized client to include token
         try:
-            # Use centralized client to include token
-            try:
-                from client.services import api_client
-            except Exception:
-                from .services import api_client
+            from client.services import api_client
             r = api_client.get(API_EMP_META)
             data = r.json()
         except Exception:
@@ -728,10 +744,7 @@ class پنجره_داشبورد(QWidget):
 
     def _load_users(self):
         try:
-            try:
-                from client.services import api_client
-            except Exception:
-                from .services import api_client
+            from client.services import api_client
             r = api_client.get(API_EMP_CREATE)
             data = r.json()
         except Exception:
@@ -829,10 +842,7 @@ class پنجره_داشبورد(QWidget):
             "status": "active" if self.cb_status.currentIndex() == 0 else "inactive",
         }
         try:
-            try:
-                from client.services import api_client
-            except Exception:
-                from .services import api_client
+            from client.services import api_client
             r = api_client.post_json(API_EMP_CREATE, payload)
             data = r.json()
         except Exception:
@@ -906,7 +916,7 @@ class پنجره_ورود(QWidget):
             try:
                 from client.services.auth_service import login as auth_login
             except Exception:
-                from .services.auth_service import login as auth_login
+                from client.services.auth_service import login as auth_login
             body = auth_login(national_id, password)
         except Exception:
             self.برچسب_وضعیت.setText("اتصال به سرور برقرار نشد.")
@@ -922,9 +932,9 @@ class پنجره_ورود(QWidget):
             try:
                 from client.services import api_client
             except Exception:
-                from .services import api_client
+                from client.services import api_client
             try:
-                api_client.post_json("http://127.0.0.1:5000/api/attendance/check-in", {})
+                api_client.post_json("/api/attendance/check-in", {})
             except Exception:
                 pass
             # Show dashboard and pass a callback to return to login on logout
@@ -953,8 +963,13 @@ def configure_logging():
 
 
 def _apply_global_font(app: QApplication):
-    """Load and apply Vazir font globally."""
+    """Load and apply Vazir font globally.
+    When bundled with PyInstaller, fall back to _MEIPASS data dir.
+    """
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets", "fonts"))
+    if not os.path.exists(base_dir):
+        # Fallback for PyInstaller onefile/onedir
+        base_dir = os.path.join(getattr(sys, "_MEIPASS", os.path.abspath(".")), "client", "assets", "fonts")
     candidates = [
         os.path.join(base_dir, "Vazir.ttf"),
         os.path.join(base_dir, "Vazir-Medium.ttf"),

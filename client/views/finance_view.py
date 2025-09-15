@@ -415,7 +415,7 @@ class FinanceView(QWidget):
         transactions_layout.addWidget(transactions_title)
         
         self.transactions_table = AdvancedTable([
-            "نوع", "منبع", "مبلغ", "تاریخ", "توضیحات"
+            "نوع", "منبع", "مبلغ", "تاریخ", "توضیحات", "شناسه"
         ])
         self.transactions_table.add_action_column(["حذف"])
         self.transactions_table.action_clicked.connect(self._on_transaction_action)
@@ -470,7 +470,7 @@ class FinanceView(QWidget):
                 self.creditors_card.update_value(format_persian_currency(0), "محدود")
                 return
 
-            response = api_client.get("http://127.0.0.1:5000/api/finance/metrics")
+            response = api_client.get("/api/finance/metrics")
             
             if response.status_code == 403:
                 # Silent handling: keep UI clean
@@ -529,7 +529,7 @@ class FinanceView(QWidget):
                 self.trend_table.set_data([])
                 return
 
-            response = api_client.get("http://127.0.0.1:5000/api/finance/trend")
+            response = api_client.get("/api/finance/trend")
             
             if response.status_code == 403:
                 # Silent: show empty
@@ -590,7 +590,7 @@ class FinanceView(QWidget):
     def _load_transactions(self):
         """Load financial transactions"""
         try:
-            response = api_client.get("http://127.0.0.1:5000/api/finance/transactions")
+            response = api_client.get("/api/finance/transactions")
             
             if response.status_code == 403:
                 return
@@ -609,7 +609,8 @@ class FinanceView(QWidget):
                         "منبع": desc,
                         "مبلغ": format_persian_currency(trans.get("amount", 0)),
                         "تاریخ": to_jalali_dt_str(trans.get("date", "")),
-                        "توضیحات": desc[:50] + "..." if len(desc) > 50 else desc
+                        "توضیحات": desc[:50] + "..." if len(desc) > 50 else desc,
+                        "شناسه": str(trans.get("id"))
                     })
                 
                 self.transactions_table.set_data(table_data)
@@ -629,7 +630,7 @@ class FinanceView(QWidget):
                 return
             
             try:
-                endpoint = f"http://127.0.0.1:5000/api/finance/{transaction_type}"
+                endpoint = f"/api/finance/{transaction_type}"
                 response = api_client.post_json(endpoint, data)
                 
                 if response.status_code == 200:
@@ -652,8 +653,34 @@ class FinanceView(QWidget):
             )
             
             if reply == QMessageBox.Yes:
-                # TODO: Implement transaction deletion
-                QMessageBox.information(self, "اطلاع", "قابلیت حذف تراکنش در نسخه بعدی اضافه خواهد شد")
+                # Calculate selected transaction from table
+                current_page = getattr(self.transactions_table, 'current_page', 0)
+                rows_per_page = getattr(self.transactions_table, 'rows_per_page', 20)
+                start_idx = current_page * rows_per_page
+                data_index = start_idx + row_index
+                try:
+                    row = self.transactions_table.filtered_data[data_index]
+                except Exception:
+                    row = None
+                if not row:
+                    return
+                txn_id = (row.get("شناسه") or "").strip()
+                txn_type = "revenue" if "درآمد" in (row.get("نوع") or "") else "expense"
+                if not txn_id:
+                    QMessageBox.warning(self, "خطا", "شناسه تراکنش یافت نشد")
+                    return
+                try:
+                    resp = api_client.delete(f"/api/finance/transactions/{txn_id}?type={txn_type}")
+                    if resp.status_code == 200:
+                        QMessageBox.information(self, "موفقیت", "تراکنش حذف شد")
+                        # فقط لیست تراکنش‌ها را تازه‌سازی کن تا روی نمودار/جداول روند اثر نگذارد
+                        self._load_transactions()
+                    elif resp.status_code == 404:
+                        QMessageBox.warning(self, "خطا", "تراکنش پیدا نشد")
+                    else:
+                        QMessageBox.warning(self, "خطا", "حذف تراکنش ناموفق بود")
+                except Exception:
+                    QMessageBox.critical(self, "خطا", "ارتباط با سرور ناموفق بود")
     
     def _show_error(self, message: str):
         """Show error message"""

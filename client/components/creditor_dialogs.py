@@ -7,10 +7,10 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QDate, QLocale
 
-from ..services import api_client
-from ..utils.styles import style_dialog_buttons
+from client.services import api_client
+from client.utils.styles import style_dialog_buttons
 
-API_CREDITORS = "http://127.0.0.1:5000/api/creditors"
+API_CREDITORS = "/api/creditors"
 
 
 def _load_creditor(cred_id: int) -> Dict[str, Any]:

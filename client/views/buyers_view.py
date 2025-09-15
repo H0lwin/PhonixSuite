@@ -7,13 +7,13 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from ..services import api_client
-from ..utils.styles import PRIMARY, SECONDARY, DANGER
-from ..components.loan_dialogs import LoanViewDialog  # reuse dialog styling patterns
-from ..components.buyer_dialogs import BuyerAddDialog, BuyerEditDialog
-from ..utils.i18n import t_status
+from client.services import api_client
+from client.utils.styles import PRIMARY, SECONDARY, DANGER
+from client.components.loan_dialogs import LoanViewDialog  # reuse dialog styling patterns
+from client.components.buyer_dialogs import BuyerAddDialog, BuyerEditDialog
+from client.utils.i18n import t_status
 
-API_BUYERS = "http://127.0.0.1:5000/api/loan-buyers"
+API_BUYERS = "/api/loan-buyers"
 
 
 STATUS_LABELS = [
@@ -301,7 +301,7 @@ class BuyersView(QWidget):
             self.list_timeline.setVisible(True)
             self.list_timeline.clear()
             # Convert ISO/Gregorian date to Jalali for display
-            from ..components.jalali_date import gregorian_to_jalali
+            from client.components.jalali_date import gregorian_to_jalali
             for it in data.get("items", []):
                 status_fa = status_label_map.get(it.get("status"), it.get("status"))
                 iso = str(it.get("changed_at") or "")[:10]

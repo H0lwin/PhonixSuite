@@ -374,15 +374,15 @@ class FinancialReportsTab(QWidget):
         """Load and display financial metrics"""
         try:
             # Ensure we have the latest session info
-            from ..state import session as _session
+            from client.state import session as _session
             if not _session.get_token():
                 self.show_error("خطا در احراز هویت. لطفاً مجدداً وارد شوید")
                 return
                 
-            from ..services import api_client
+            from client.services import api_client
             
             # Load metrics
-            response = api_client.get("http://127.0.0.1:5000/api/finance/metrics")
+            response = api_client.get("/api/finance/metrics")
             
             if response.status_code == 403:
                 # User doesn't have access to financial data
@@ -449,9 +449,9 @@ class FinancialReportsTab(QWidget):
     def load_trend_data(self):
         """Load and display 6-month trend data in both chart and table"""
         try:
-            from ..services import api_client
+            from client.services import api_client
             
-            response = api_client.get("http://127.0.0.1:5000/api/finance/trend")
+            response = api_client.get("/api/finance/trend")
             
             if response.status_code == 403:
                 # User doesn't have access to financial data
@@ -786,9 +786,9 @@ class FinancialManagementTab(QWidget):
     def save_transaction(self, transaction_type: str, amount: float, description: str):
         """Save transaction to server"""
         try:
-            from ..services import api_client
+            from client.services import api_client
             
-            endpoint = f"http://127.0.0.1:5000/api/finance/{transaction_type}"
+            endpoint = f"/api/finance/{transaction_type}"
             payload = {
                 "source": description,
                 "amount": amount
@@ -811,14 +811,14 @@ class FinancialManagementTab(QWidget):
         """Load and display transactions with enhanced formatting"""
         try:
             # Check authentication
-            from ..state import session as _session
+            from client.state import session as _session
             if not _session.get_token():
                 QMessageBox.warning(self, "خطا", "نشست شما منقضی شده. لطفاً مجدداً وارد شوید")
                 return
                 
-            from ..services import api_client
+            from client.services import api_client
             
-            response = api_client.get("http://127.0.0.1:5000/api/finance/transactions")
+            response = api_client.get("/api/finance/transactions")
             data = response.json()
             
             if data.get("status") == "success":
@@ -939,9 +939,9 @@ class FinancialManagementTab(QWidget):
         
         if reply == QMessageBox.Yes:
             try:
-                from ..services import api_client
+                from client.services import api_client
                 
-                url = f"http://127.0.0.1:5000/api/finance/transactions/{transaction_id}?type={transaction_type}"
+                url = f"/api/finance/transactions/{transaction_id}?type={transaction_type}"
                 response = api_client.delete(url)
                 data = response.json()
                 

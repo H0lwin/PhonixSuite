@@ -6,11 +6,11 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QDate, QLocale
 
-from ..services import api_client
-from ..utils.styles import style_dialog_buttons
+from client.services import api_client
+from client.utils.styles import style_dialog_buttons
 
-API_BUYERS = "http://127.0.0.1:5000/api/loan-buyers"
-API_LOANS = "http://127.0.0.1:5000/api/loans"
+API_BUYERS = "/api/loan-buyers"
+API_LOANS = "/api/loans"
 
 STATUS_OPTIONS: List[tuple[str, str]] = [
     ("request_registered", "درخواست ثبت شد"),
@@ -66,7 +66,7 @@ class BuyerAddDialog(QDialog):
         self.in_phone = QLineEdit(); self.in_phone.setPlaceholderText("مثال: 09123456789")
         self.in_amount = _fmt_amount_box(0)
         self.in_bank = QLineEdit(); self.in_bank.setPlaceholderText("بانک")
-        from .jalali_date import JalaliDateEdit
+        from client.components.jalali_date import JalaliDateEdit
         self.in_visit = JalaliDateEdit(); self.in_visit.set_from_gregorian(QDate.currentDate())
         self.in_visit.setStyleSheet("QLineEdit{padding:8px 10px; border:1px solid #ced4da; border-radius:6px; font-size:13px;} QPushButton{padding:6px 10px;}")
         self.cb_loan = QComboBox()
@@ -76,7 +76,9 @@ class BuyerAddDialog(QDialog):
             disp = f"#{it.get('id')} - {it.get('bank_name','')} - {it.get('owner_full_name','')}"
             self.cb_loan.addItem(disp, it.get("id"))
         self.in_sale_price = _fmt_amount_box(0)
-        self.cb_sale_type = QComboBox(); self.cb_sale_type.addItems(["Cash"])  # maps to 'cash'
+        self.cb_sale_type = QComboBox();
+        self.cb_sale_type.addItem("نقدی", "cash")
+        self.cb_sale_type.addItem("شرایطی", "installment")
         self.cb_status = QComboBox()
         for val, fa in STATUS_OPTIONS:
             self.cb_status.addItem(fa, val)
@@ -114,7 +116,7 @@ class BuyerAddDialog(QDialog):
             "processing_status": self.cb_status.currentData() or "request_registered",
             "loan_id": self.cb_loan.currentData(),
             "sale_price": float(self.in_sale_price.value()),
-            "sale_type": "cash",
+            "sale_type": (self.cb_sale_type.currentData() or "cash"),
         }
         try:
             r = api_client.post_json(API_BUYERS, payload)
@@ -159,7 +161,7 @@ class BuyerEditDialog(QDialog):
         except Exception:
             self.in_amount.setValue(0)
         self.in_bank = QLineEdit(self._item.get("bank_agent", ""))
-        from .jalali_date import JalaliDateEdit
+        from client.components.jalali_date import JalaliDateEdit
         self.in_visit = JalaliDateEdit()
         try:
             if self._item.get("visit_date"):
@@ -188,7 +190,9 @@ class BuyerEditDialog(QDialog):
             self.in_sale_price.setValue(float(self._item.get("sale_price") or 0))
         except Exception:
             self.in_sale_price.setValue(0)
-        self.cb_sale_type = QComboBox(); self.cb_sale_type.addItems(["Cash"])  # only 'cash' for now
+        self.cb_sale_type = QComboBox();
+        self.cb_sale_type.addItem("نقدی", "cash")
+        self.cb_sale_type.addItem("شرایطی", "installment")
         self.cb_status = QComboBox()
         for val, fa in STATUS_OPTIONS:
             self.cb_status.addItem(fa, val)
@@ -225,7 +229,7 @@ class BuyerEditDialog(QDialog):
             "processing_status": self.cb_status.currentData() or "request_registered",
             "loan_id": self.cb_loan.currentData(),
             "sale_price": float(self.in_sale_price.value()),
-            "sale_type": "cash",
+            "sale_type": (self.cb_sale_type.currentData() or "cash"),
         }
         try:
             r = api_client.patch_json(f"{API_BUYERS}/{self.buyer_id}", payload)

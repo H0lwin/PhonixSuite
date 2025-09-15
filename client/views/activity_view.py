@@ -17,8 +17,8 @@ from PySide6.QtCore import Qt
 from client.services import api_client
 from client.components.jalali_date import JalaliDateEdit, to_jalali_dt_str
 
-API_EMP_LIST = "http://127.0.0.1:5000/api/employees"
-API_ACTIVITY = "http://127.0.0.1:5000/api/activity"
+API_EMP_LIST = "/api/employees"
+API_ACTIVITY = "/api/activity"
 
 
 class ActivityView(QWidget):

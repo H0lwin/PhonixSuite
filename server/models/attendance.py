@@ -70,10 +70,20 @@ _def_now_time = lambda: datetime.now().time().replace(microsecond=0)
 _def_today = lambda: datetime.now().date()
 
 
-def _serialize_date(d: Optional[date]) -> Optional[str]:
+def _serialize_date(d: Optional[Any]) -> Optional[str]:
     if d is None:
         return None
-    return d.isoformat()
+    # Handle Python date/datetime objects
+    if isinstance(d, date) and not isinstance(d, datetime):
+        return d.isoformat()
+    if isinstance(d, datetime):
+        return d.date().isoformat()
+    # If DB returned a string (e.g., from a literal %s AS date), trust it as ISO string
+    if isinstance(d, str):
+        s = d.strip()
+        return s or None
+    # Fallback: stringify
+    return str(d)
 
 
 def _serialize_time(t: Optional[Any]) -> Optional[str]:
@@ -120,8 +130,8 @@ def _recompute_daily_rollup(conn, employee_id: int, day: date) -> None:
         """
         SELECT 
             MIN(check_in) AS first_in,
-            MAX(check_out) AS last_out,
-            SUM(CASE WHEN check_out IS NOT NULL THEN TIME_TO_SEC(TIMEDIFF(check_out, check_in)) ELSE 0 END) AS total_sec,
+            MAX(COALESCE(check_out, TIME(updated_at))) AS last_out,
+            SUM(TIME_TO_SEC(TIMEDIFF(COALESCE(check_out, TIME(updated_at)), check_in))) AS total_sec,
             COUNT(*) AS cnt
         FROM attendance_sessions
         WHERE employee_id=%s AND date=%s
@@ -223,6 +233,41 @@ def check_out(employee_id: int, day: Optional[date] = None, t: Optional[time] = 
     return sid
 
 
+def heartbeat(employee_id: int, day: Optional[date] = None) -> None:
+    """Update or create today's open session for crash-safe tracking.
+    - If an open session exists for today: touch updated_at to now
+    - Else: auto check-in to start a session
+    Then recompute the daily rollup.
+    """
+    day = day or _def_today()
+    conn = get_connection(True)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id FROM attendance_sessions
+        WHERE employee_id=%s AND date=%s AND check_out IS NULL
+        ORDER BY id DESC LIMIT 1
+        """,
+        (employee_id, day),
+    )
+    row = cur.fetchone()
+    if row:
+        sid = int(row[0])
+        try:
+            cur2 = conn.cursor(); cur2.execute("UPDATE attendance_sessions SET updated_at=CURRENT_TIMESTAMP WHERE id=%s", (sid,)); conn.commit(); cur2.close()
+        except Exception:
+            pass
+    else:
+        try:
+            # Start a session automatically
+            check_in(employee_id, day=day)
+        except Exception:
+            pass
+    # Recompute rollup
+    _recompute_daily_rollup(conn, employee_id, day)
+    cur.close(); conn.close()
+
+
 def list_attendance(employee_id: int) -> List[dict]:
     """List per-day attendance (summary) for an employee ordered by date desc."""
     conn = get_connection(True)
@@ -254,31 +299,114 @@ def list_attendance_admin(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
 ) -> List[dict]:
-    """Admin listing with optional filters; returns daily rows joined with employee name.
-    - If no sessions for a day, there won't be a row unless explicitly constructed; admin UI can query a single date to infer 'absent'.
+    """Admin listing with optional filters.
+    - Default: when no date filter is provided, show TODAY for ALL employees (one row per employee)
+    - For a single day: include all employees with present/absent status, first/last and total from sessions/rows
+    - For a date range: fall back to aggregated rows that exist (legacy behavior)
     """
     conn = get_connection(True)
     cur = conn.cursor()
+
+    # If no dates provided, default to today as a single-day report
+    if not date_from and not date_to:
+        day = datetime.now().date()
+        date_from = day
+        date_to = day
+
+    # Single-day mode: one row per employee (present/absent)
+    if date_from and date_to and date_from == date_to:
+        day = date_from
+        params: List[Any] = [day, day]
+        where_emp = ""
+        if employee_id:
+            where_emp = "WHERE e.id=%s"
+        
+        if employee_id:
+            params.extend([employee_id, employee_id])  # for joins if needed
+        
+        # Build query: LEFT JOIN aggregated sessions and legacy rows onto employees
+        q = f"""
+            SELECT 
+                e.id AS employee_id,
+                e.full_name,
+                %s AS date,
+                COALESCE(s.first_in, a.first_in) AS check_in,
+                COALESCE(s.last_out, a.last_out) AS check_out,
+                COALESCE(s.total_sec, a.total_sec, 0) AS total_seconds,
+                CASE WHEN COALESCE(s.cnt, a.cnt, 0) = 0 THEN 'absent' ELSE 'present' END AS status
+            FROM employees e
+            LEFT JOIN (
+                SELECT employee_id,
+                       MIN(check_in) AS first_in,
+                       MAX(check_out) AS last_out,
+                       SUM(CASE WHEN check_out IS NOT NULL THEN TIME_TO_SEC(TIMEDIFF(check_out, check_in)) ELSE 0 END) AS total_sec,
+                       COUNT(*) AS cnt
+                FROM attendance_sessions
+                WHERE date=%s
+                GROUP BY employee_id
+            ) s ON s.employee_id = e.id
+            LEFT JOIN (
+                SELECT employee_id,
+                       MIN(check_in) AS first_in,
+                       MAX(check_out) AS last_out,
+                       SUM(CASE WHEN check_out IS NOT NULL THEN TIME_TO_SEC(TIMEDIFF(check_out, check_in)) ELSE 0 END) AS total_sec,
+                       COUNT(*) AS cnt
+                FROM attendance
+                WHERE date=%s
+                GROUP BY employee_id
+            ) a ON a.employee_id = e.id
+            {where_emp}
+            ORDER BY e.full_name ASC, e.id ASC
+        """
+        # If filtering by single employee, add WHERE and adjust params accordingly
+        if employee_id:
+            # The WHERE applies to employees table; params for WHERE appear after existing %s
+            params = [day, day, day, employee_id]
+        else:
+            params = [day, day, day]
+        
+        cur.execute(q, tuple(params))
+        rows = cur.fetchall(); cur.close(); conn.close()
+        cols = ["employee_id","full_name","date","check_in","check_out","total_seconds","status"]
+        items: List[dict] = []
+        for r in rows:
+            d = dict(zip(cols, r))
+            d["date"] = _serialize_date(d.get("date"))
+            d["check_in"] = _serialize_time(d.get("check_in"))
+            d["check_out"] = _serialize_time(d.get("check_out"))
+            d["total_seconds"] = int(d.get("total_seconds") or 0)
+            items.append(d)
+        return items
+
+    # Range mode (fallback to legacy aggregation on existing rows only)
     sql = [
         """
-        SELECT a.employee_id, e.full_name, a.date, a.check_in, a.check_out, a.total_seconds, a.status
+        SELECT 
+            a.employee_id, 
+            e.full_name, 
+            a.date,
+            MIN(a.check_in) AS check_in,
+            MAX(a.check_out) AS check_out,
+            SUM(CASE WHEN a.check_out IS NOT NULL THEN TIME_TO_SEC(TIMEDIFF(a.check_out, a.check_in)) ELSE 0 END) AS total_seconds,
+            CASE WHEN SUM(CASE WHEN a.check_in IS NOT NULL THEN 1 ELSE 0 END) = 0 THEN 'absent' ELSE 'present' END AS status
         FROM attendance a
         JOIN employees e ON e.id = a.employee_id
         """
     ]
     where = []
-    params: List[Any] = []
+    params2: List[Any] = []
     if employee_id:
-        where.append("a.employee_id=%s"); params.append(employee_id)
+        where.append("a.employee_id=%s"); params2.append(employee_id)
     if date_from:
-        where.append("a.date >= %s"); params.append(date_from)
+        where.append("a.date >= %s"); params2.append(date_from)
     if date_to:
-        where.append("a.date <= %s"); params.append(date_to)
+        where.append("a.date <= %s"); params2.append(date_to)
     if where:
         sql.append("WHERE "+ " AND ".join(where))
+    sql.append("GROUP BY a.employee_id, a.date, e.full_name")
     sql.append("ORDER BY a.date DESC, a.employee_id ASC")
-    q = "\n".join(sql)
-    cur.execute(q, tuple(params))
+    q2 = "\n".join(sql)
+    cur.execute(q2, tuple(params2))
     rows = cur.fetchall(); cur.close(); conn.close()
     cols = ["employee_id","full_name","date","check_in","check_out","total_seconds","status"]
     items: List[dict] = []

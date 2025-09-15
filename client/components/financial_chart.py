@@ -25,7 +25,7 @@ class FinancialChart(QWidget):
         layout.setSpacing(0)
         
         # Chart title
-        self.title_label = QLabel("روند مالی شش ماه اخیر")
+        self.title_label = QLabel("روند مالی ۱۲ ماه اخیر")
         self.title_label.setAlignment(Qt.AlignCenter)
         self.title_label.setStyleSheet("""
             QLabel {
@@ -102,12 +102,16 @@ class FinancialChart(QWidget):
     def _update_chart(self):
         """Update chart with current data"""
         if not self.chart_data:
-            # Clear series if empty
+            # Clear series and axes if empty
             self.chart.removeAllSeries()
+            for ax in list(self.chart.axes()):
+                self.chart.removeAxis(ax)
             return
         
-        # Clear existing series
+        # Clear existing series and axes
         self.chart.removeAllSeries()
+        for ax in list(self.chart.axes()):
+            self.chart.removeAxis(ax)
         
         # Create bar sets
         revenue_set = QBarSet("درآمد")

@@ -7,11 +7,11 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from ..services import api_client
-from ..utils.styles import PRIMARY, PRIMARY_HOVER, SECONDARY, SECONDARY_HOVER, DANGER
+from client.services import api_client
+from client.utils.styles import PRIMARY, PRIMARY_HOVER, SECONDARY, SECONDARY_HOVER, DANGER
 
-API_BRANCHES = "http://127.0.0.1:5000/api/branches"
-API_EMP_META = "http://127.0.0.1:5000/api/employees/meta"
+API_BRANCHES = "/api/branches"
+API_EMP_META = "/api/employees/meta"
 
 
 class BranchAddDialog(QDialog):
@@ -49,7 +49,7 @@ class BranchAddDialog(QDialog):
         # We need all employees to filter active; meta endpoint returns only deps/branches.
         # As a workaround, we can fetch employees list and filter active here if needed.
         try:
-            r2 = api_client.get("http://127.0.0.1:5000/api/employees")
+            r2 = api_client.get("/api/employees")
             d2 = api_client.parse_json(r2)
             if d2.get("status") == "success":
                 for it in d2.get("items", []):
@@ -93,7 +93,7 @@ class BranchesView(QWidget):
 
         # Connect to global signals for auto-refresh
         try:
-            from ..main import global_signals
+            from client.main import global_signals
             global_signals.employee_updated.connect(self._load)
         except Exception:
             pass
@@ -216,7 +216,7 @@ class BranchesView(QWidget):
             tbl.setItem(r, 1, QTableWidgetItem(it.get("full_name", "")))
             tbl.setItem(r, 2, QTableWidgetItem(it.get("role", "")))
             # Localized status pill
-            from ..utils.i18n import t_status
+            from client.utils.i18n import t_status
             val = (it.get("status") or "")
             badge = QLabel(t_status(val)); badge.setAlignment(Qt.AlignCenter)
             badge.setStyleSheet(
@@ -232,7 +232,7 @@ class BranchesView(QWidget):
         lay.addWidget(footer)
 
         # Close button styled
-        from ..utils.styles import style_dialog_buttons
+        from client.utils.styles import style_dialog_buttons
         btns = QDialogButtonBox(QDialogButtonBox.Close)
         style_dialog_buttons(btns)
         btns.rejected.connect(dlg.reject)

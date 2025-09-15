@@ -9,13 +9,13 @@ from client.components.advanced_table import AdvancedTable
 from client.components.jalali_date import format_persian_currency, to_jalali_dt_str
 from PySide6.QtCore import Qt, QLocale
 
-from ..services import api_client
-from ..components.loan_dialogs import (
+from client.services import api_client
+from client.components.loan_dialogs import (
     LoanAddDialog, LoanEditDialog, LoanViewDialog, delete_loan_with_confirm
 )
-from ..utils.i18n import t_status
+from client.utils.i18n import t_status
 
-API_LOANS = "http://127.0.0.1:5000/api/loans"
+API_LOANS = "/api/loans"
 
 
 class LoansView(QWidget):
@@ -288,30 +288,51 @@ class LoansView(QWidget):
         return status_map.get(status.lower(), status)
     
     def _on_loan_action(self, action: str, row_index: int):
-        """Handle loan table actions"""
-        # Get loan data from the original data
-        # We need to find the loan by matching the displayed data with original data
-        if hasattr(self, '_all') and self._all:
-            # Get the current page data
-            current_page = getattr(self.table, 'current_page', 0)
-            rows_per_page = getattr(self.table, 'rows_per_page', 20)
-            start_idx = current_page * rows_per_page
-            actual_index = start_idx + row_index
-            
-            # Get filtered data (active loans)
-            filtered = [it for it in self._all if str(it.get("loan_status", "")).lower() != "purchased"]
-            
-            if actual_index < len(filtered):
-                loan_data = filtered[actual_index]
-                loan_id = loan_data.get("id")
-                
-                if loan_id:
-                    if action == "نمایش":
-                        self._open_view(int(loan_id))
-                    elif action == "ویرایش":
-                        self._open_edit(int(loan_id))
-                    elif action == "حذف":
-                        self._delete(int(loan_id))
+        """Handle loan table actions for both Active and History tabs"""
+        # Determine which table emitted the action
+        sender_widget = self.sender()
+        table_widget = None
+        if sender_widget is getattr(self, 'table_history', None):
+            table_widget = self.table_history
+        else:
+            table_widget = self.table  # default to active table
+        
+        # Calculate index within the sender table's filtered dataset
+        current_page = getattr(table_widget, 'current_page', 0)
+        rows_per_page = getattr(table_widget, 'rows_per_page', 20)
+        start_idx = current_page * rows_per_page
+        data_index = start_idx + row_index
+        
+        # Access the row dict from the table's filtered_data
+        row_dict = None
+        try:
+            row_dict = table_widget.filtered_data[data_index]
+        except Exception:
+            row_dict = None
+        
+        # Fallback: attempt mapping via global list if table data not accessible
+        if row_dict is None and hasattr(self, '_all') and self._all:
+            # Rebuild a matching list depending on the table (active vs history)
+            if table_widget is getattr(self, 'table_history', None):
+                items = [it for it in self._all if str(it.get('loan_status', '')).lower() == 'purchased']
+            else:
+                items = [it for it in self._all if str(it.get('loan_status', '')).lower() != 'purchased']
+            if 0 <= data_index < len(items):
+                row_dict = items[data_index]
+        
+        if not row_dict:
+            return
+        
+        loan_id = row_dict.get('id')
+        if not loan_id:
+            return
+        
+        if action == "نمایش":
+            self._open_view(int(loan_id))
+        elif action == "ویرایش":
+            self._open_edit(int(loan_id))
+        elif action == "حذف":
+            self._delete(int(loan_id))
 
     def _open_add(self):
         dlg = LoanAddDialog(self)

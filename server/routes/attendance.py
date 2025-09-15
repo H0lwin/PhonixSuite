@@ -9,6 +9,7 @@ from models.attendance import (
     check_in as _check_in,
     check_out as _check_out,
     get_daily_status,
+    heartbeat as _heartbeat,
 )
 
 bp_attendance = Blueprint("attendance", __name__, url_prefix="/api/attendance")
@@ -96,7 +97,31 @@ def attendance_admin_list():
     except Exception:
         return jsonify({"status": "error", "message": "Invalid date format"}), 400
     items = list_attendance_admin(emp_id, date_from, date_to)
-    return jsonify({"status": "success", "items": items})
+    # Diagnostic logging for troubleshooting empty attendance table in UI
+    try:
+        import logging
+        logging.getLogger("routes.attendance").info(
+            "/api/attendance/admin employee_id=%s from=%s to=%s count=%s",
+            emp_id, date_from, date_to, len(items),
+        )
+    except Exception:
+        pass
+    return jsonify({"status": "success", "count": len(items), "items": items})
+
+
+# Heartbeat: keeps today's session alive and crash-safe
+@bp_attendance.post("/heartbeat")
+@require_auth
+def attendance_heartbeat():
+    from flask import g
+    emp_id = (g.user or {}).get("user_id")
+    if not emp_id:
+        return jsonify({"status": "error", "message": "No user"}), 400
+    try:
+        _heartbeat(int(emp_id))
+        return jsonify({"status": "success"})
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 500
 
 
 # Per-employee daily summary

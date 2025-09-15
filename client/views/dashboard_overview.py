@@ -17,11 +17,11 @@ from client.services import api_client
 from client.state import session as client_session
 from client.components.jalali_date import to_jalali_dt_str
 
-API_RECENT = "http://127.0.0.1:5000/api/activity"
-API_EMP_LIST = "http://127.0.0.1:5000/api/employees"
-API_FIN_METRICS = "http://127.0.0.1:5000/api/finance/metrics"
-API_LOANS = "http://127.0.0.1:5000/api/loans"
-API_ATT_ADMIN = "http://127.0.0.1:5000/api/attendance/admin"
+API_RECENT = "/api/activity"
+API_EMP_LIST = "/api/employees"
+API_FIN_METRICS = "/api/finance/metrics"
+API_LOANS = "/api/loans"
+API_ATT_ADMIN = "/api/attendance/admin"
 
 
 class DashboardOverview(QWidget):
@@ -50,10 +50,8 @@ class DashboardOverview(QWidget):
         # Cards container (responsive row)
         cards = QHBoxLayout(); cards.setSpacing(12)
         self.card_total_loans = self._make_card("💰 ارزش کل وام‌ها", "۰ تومان", "مجموع ارزش تمام وام‌های ثبت شده در سیستم.")
-        self.card_active_emps = self._make_card("👤 کاربران آنلاین", "0", "کاربران با جلسه فعال (آنلاین).")
-        self.card_pending_leave = self._make_card("🕒 در انتظار تأیید", "0", "تعداد درخواست‌های مرخصی در انتظار تأیید.")
         self.card_month_income = self._make_card("📈 درآمد ماهانه", "۰ تومان", "سود تخمینی این ماه (از محاسبات مالی).")
-        for c in (self.card_total_loans, self.card_active_emps, self.card_pending_leave, self.card_month_income):
+        for c in (self.card_total_loans, self.card_month_income):
             cards.addWidget(c)
         v.addLayout(cards)
 
@@ -124,7 +122,7 @@ class DashboardOverview(QWidget):
         
         v.addLayout(bottom_row)
 
-        # Periodic refresh: active users count and cards
+        # Periodic refresh: cards
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setInterval(30000)  # 30s
         self._refresh_timer.timeout.connect(self._load_cards)
@@ -147,29 +145,24 @@ class DashboardOverview(QWidget):
         return box
 
     def _load_cards(self):
-        # total loan value (sum of purchase_rate)
+        # total loan value (available/active only) -> sum of 'amount' excluding purchased/failed/cancelled
         try:
             data = api_client.parse_json(api_client.get(API_LOANS))
         except Exception:
             data = {"status": "error"}
-        total = 0
+        total = 0.0
         if data.get("status") == "success":
             for it in data.get("items", []):
                 try:
-                    total += float(it.get("purchase_rate") or 0)
+                    status = str(it.get("loan_status", "")).lower()
+                    if status in ("purchased", "failed", "cancelled"):
+                        continue
+                    total += float(it.get("amount") or 0)
                 except Exception:
-                    pass
+                    continue
         self.card_total_loans._value_label.setText(f"{int(total):,} تومان".replace(",", ","))
 
-        # online users (active auth tokens)
-        try:
-            resp = api_client.get("http://127.0.0.1:5000/api/admin/active-users")
-            data = api_client.parse_json(resp)
-        except Exception:
-            data = {"status": "error"}
-        online_cnt = int(data.get("count") or 0) if data.get("status") == "success" else 0
-        self._active_count = online_cnt
-        self.card_active_emps._value_label.setText(str(online_cnt))
+
 
         # monthly income (placeholder -> use finance metrics if available)
         try:
@@ -245,10 +238,7 @@ class DashboardOverview(QWidget):
         if data.get("status") == "success":
             items = data.get("items", [])
             present = len(items)
-        if self._active_count:
-            self.lbl_attendance.setText(f"امروز: حاضر {present} نفر / کل فعال {self._active_count} نفر")
-        else:
-            self.lbl_attendance.setText(f"امروز: حاضر {present} نفر")
+        self.lbl_attendance.setText(f"امروز: حاضر {present} نفر")
 
     def _tick_session(self):
         if not self._session_timer:

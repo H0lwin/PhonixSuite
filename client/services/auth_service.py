@@ -3,11 +3,11 @@
 """
 import json
 from typing import Dict
-from . import api_client
-from ..state import session
+from client.services import api_client
+from client.state import session
 
-API_LOGIN = "http://127.0.0.1:5000/api/auth/login"
-API_LOGOUT = "http://127.0.0.1:5000/api/auth/logout"
+API_LOGIN = "/api/auth/login"
+API_LOGOUT = "/api/auth/logout"
 
 
 def login(national_id: str, password: str) -> Dict:

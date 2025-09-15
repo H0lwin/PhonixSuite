@@ -6,12 +6,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from ..services import api_client
-from ..components.creditor_dialogs import (
+from client.services import api_client
+from client.components.creditor_dialogs import (
     CreditorAddDialog, CreditorEditDialog, CreditorViewDialog, PayDialog
 )
 
-API_CREDITORS = "http://127.0.0.1:5000/api/creditors"
+API_CREDITORS = "/api/creditors"
 
 
 class CreditorsView(QWidget):

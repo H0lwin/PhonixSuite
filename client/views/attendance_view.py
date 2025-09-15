@@ -17,11 +17,12 @@ from client.components.styled_table import StyledTableWidget
 from PySide6.QtCore import Qt
 
 # Local imports
+import logging
 from client.services import api_client
 from client.components.jalali_date import JalaliDateEdit, gregorian_to_jalali
 
-API_EMP_LIST = "http://127.0.0.1:5000/api/employees"
-API_ATT_ADMIN = "http://127.0.0.1:5000/api/attendance/admin"
+API_EMP_LIST = "/api/employees"
+API_ATT_ADMIN = "/api/attendance/admin"
 
 
 def _fmt_hms_total(seconds: int) -> str:
@@ -114,9 +115,11 @@ class AttendanceView(QWidget):
         try:
             resp = api_client.get(url)
             data = api_client.parse_json(resp)
-        except Exception:
+        except Exception as e:
+            logging.exception("attendance _refresh failed: %s", e)
             data = {"status": "error"}
         items = data.get("items", []) if data.get("status") == "success" else []
+        logging.info("attendance items fetched: url=%s count=%s", url, len(items))
         self._render(items)
 
     def _render(self, items: List[Dict[str, Any]]):
@@ -146,4 +149,5 @@ class AttendanceView(QWidget):
             ]
             for c, v in enumerate(vals):
                 self.tbl.setItem(row, c, QTableWidgetItem(str(v)))
+        logging.info("attendance table rendered: rows=%s", self.tbl.rowCount())
 

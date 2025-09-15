@@ -242,6 +242,23 @@ app.register_blueprint(bp_branches)
 app.register_blueprint(bp_activity)
 
 
+# Client-side logs receiver
+@app.post("/api/client-logs")
+def api_client_logs():
+    try:
+        data = request.get_json(silent=True, force=True) or {}
+        level = str(data.get("level", "INFO")).upper()
+        message = str(data.get("message", "")).strip()
+        logger_name = str(data.get("logger", "client")).strip() or "client"
+        # Map level
+        lvl = getattr(logging, level, logging.INFO)
+        logging.getLogger(logger_name).log(lvl, "[client] %s", message)
+        return jsonify({"status": "success"})
+    except Exception as exc:
+        app.logger.exception("client log error: %s", exc)
+        return jsonify({"status": "error"}), 500
+
+
 # ----- Bootstrapping and logging -----
 
 def start_server():
@@ -432,4 +449,7 @@ if __name__ == "__main__":
         backfill_creditor_metadata()
     else:
         start_server()
-        app.run(host="127.0.0.1", port=5000, debug=True)
+        # Bind to all interfaces for LAN access
+        # Respect HOST/PORT env vars for deployment; default remains dev-friendly
+        from config import Config
+        app.run(host=os.getenv("HOST", Config.HOST), port=int(os.getenv("PORT", Config.PORT)), debug=Config.DEBUG)
