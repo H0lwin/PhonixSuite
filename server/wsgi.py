@@ -6,9 +6,10 @@ WSGI entrypoint for production. Use a real WSGI server (e.g., gunicorn or waitre
 """
 from .app import app, configure_logging, start_server
 
-# Configure logging to file and initialize DB/schema. Avoid interactive wizard in prod.
+# Configure logging to file and initialize DB/schema.
+# Also run admin wizard interactively on first run if no admin exists.
 configure_logging()
-start_server(skip_admin_wizard=True)
+start_server(skip_admin_wizard=False)
 
 # Expose as WSGI application object
 application = app

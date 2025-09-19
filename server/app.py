@@ -92,7 +92,11 @@ def ensure_database_exists():
 
 
 def ensure_admin_wizard(force: bool = False):
-    """CLI wizard to create an admin employee if none exists."""
+    """Create an admin if none exists.
+    - If running interactively (tty), prompt the user.
+    - If non-interactive, create a temporary admin with env/defaults and log the credentials.
+    """
+    import sys
     # Ensure schema first
     ensure_employee_schema()
 
@@ -101,54 +105,98 @@ def ensure_admin_wizard(force: bool = False):
     cur.execute("SELECT COUNT(*) FROM employees WHERE role='admin'")
     admin_count = cur.fetchone()[0]
     if not force and admin_count > 0:
-        cur.close()
-        conn.close()
-        return
+        cur.close(); conn.close(); return
 
-    print("There is no admin user. Please create an admin employee.")
-    while True:
-        full_name = input("Admin Full Name: ").strip()
-        if not full_name:
-            print("Full name cannot be empty.")
-            continue
-        national_id = input("Admin National ID (10 digits): ").strip()
-        if not national_id or not national_id.isdigit() or len(national_id) != 10:
-            print("National ID must be 10 digits.")
-            continue
-        # Check uniqueness
-        cur.execute("SELECT COUNT(*) FROM employees WHERE national_id=%s", (national_id,))
-        if cur.fetchone()[0] > 0:
-            print("This national ID already exists. Choose another one.")
-            continue
-        password = getpass.getpass("Password: ").strip()
-        repeat = getpass.getpass("Repeat password: ").strip()
-        if not password:
-            print("Password cannot be empty.")
-            continue
-        if password != repeat:
-            print("The password and its repetition are not the same.")
-            continue
+    # If interactive terminal, run wizard
+    try:
+        is_tty = sys.stdin is not None and sys.stdin.isatty()
+    except Exception:
+        is_tty = False
 
-        # Hash password with bcrypt
+    if is_tty:
+        print("There is no admin user. Please create an admin employee.")
+        while True:
+            full_name = input("Admin Full Name: ").strip()
+            if not full_name:
+                print("Full name cannot be empty."); continue
+            national_id = input("Admin National ID (10 digits): ").strip()
+            if not national_id or not national_id.isdigit() or len(national_id) != 10:
+                print("National ID must be 10 digits."); continue
+            # Check uniqueness
+            cur.execute("SELECT COUNT(*) FROM employees WHERE national_id=%s", (national_id,))
+            if cur.fetchone()[0] > 0:
+                print("This national ID already exists. Choose another one."); continue
+            password = getpass.getpass("Password: ").strip()
+            repeat = getpass.getpass("Repeat password: ").strip()
+            if not password:
+                print("Password cannot be empty."); continue
+            if password != repeat:
+                print("The password and its repetition are not the same."); continue
+
+            # Hash password with bcrypt
+            try:
+                import bcrypt
+                hashed_pwd = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+            except Exception:
+                hashed_pwd = password
+
+            cur.execute(
+                """
+                INSERT INTO employees (full_name, national_id, password, role, status)
+                VALUES (%s,%s,%s,%s,%s)
+                """,
+                (full_name, national_id, hashed_pwd, "admin", "active"),
+            )
+            conn.commit()
+            print("Administrator employee created successfully.")
+            cur.close(); conn.close(); return
+
+    # Non-interactive fallback: create a temporary admin and log credentials
+    import os
+    full_name = os.getenv("DEFAULT_ADMIN_NAME", "Admin User")
+    national_id = os.getenv("DEFAULT_ADMIN_NID", "9999999999")
+    password = os.getenv("DEFAULT_ADMIN_PASSWORD")
+    if not password:
+        # Generate a simple random password
         try:
-            import bcrypt
-            hashed_pwd = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+            import secrets, string
+            alph = string.ascii_letters + string.digits
+            password = ''.join(secrets.choice(alph) for _ in range(12))
         except Exception:
-            hashed_pwd = password
+            password = "ChangeMe123"
 
-        cur.execute(
-            """
-            INSERT INTO employees (full_name, national_id, password, role, status)
-            VALUES (%s,%s,%s,%s,%s)
-            """,
-            (full_name, national_id, hashed_pwd, "admin", "active"),
-        )
-        conn.commit()
-        print("Administrator employee created successfully.")
-        break
+    # Ensure unique national_id (increment last digit if needed)
+    for _ in range(5):
+        cur.execute("SELECT COUNT(*) FROM employees WHERE national_id=%s", (national_id,))
+        if cur.fetchone()[0] == 0:
+            break
+        # bump last digit (wrap to 0)
+        national_id = national_id[:-1] + str((int(national_id[-1]) + 1) % 10)
 
-    cur.close()
-    conn.close()
+    try:
+        import bcrypt
+        hashed_pwd = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    except Exception:
+        hashed_pwd = password
+
+    cur.execute(
+        """
+        INSERT INTO employees (full_name, national_id, password, role, status)
+        VALUES (%s,%s,%s,%s,%s)
+        """,
+        (full_name, national_id, hashed_pwd, "admin", "active"),
+    )
+    conn.commit()
+    try:
+        msg = f"Temporary admin created (non-interactive): name='{full_name}', national_id='{national_id}', password='{password}'"
+        print(msg)
+        try:
+            app.logger.warning(msg)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    cur.close(); conn.close()
 
 
 # ----- Routes -----
