@@ -91,9 +91,10 @@ def ensure_database_exists():
     conn.close()
 
 
-def ensure_admin_wizard(force: bool = False):
+def ensure_admin_wizard(force: bool = False, prefer_interactive: bool = False):
     """Create an admin if none exists.
-    - If ADMIN_WIZARD_MODE=interactive and TTY available → prompt the user.
+    - If prefer_interactive and TTY available → prompt the user.
+    - Else if ADMIN_WIZARD_MODE=interactive and TTY available → prompt the user.
     - Otherwise, create a temporary admin with env/defaults and log the credentials.
     """
     import sys, os
@@ -114,7 +115,7 @@ def ensure_admin_wizard(force: bool = False):
     except Exception:
         is_tty = False
 
-    should_prompt = (mode == "interactive" and is_tty)
+    should_prompt = ((prefer_interactive and is_tty) or (mode == "interactive" and is_tty))
 
     if should_prompt:
         print("There is no admin user. Please create an admin employee.")
@@ -345,7 +346,8 @@ def start_server(skip_admin_wizard: bool = True):
 def run_create_admin(force: bool = False):
     ensure_database_exists()
     ensure_employee_schema()
-    ensure_admin_wizard(force=force)
+    # When invoked via CLI, prefer interactive prompts if TTY is available
+    ensure_admin_wizard(force=force, prefer_interactive=True)
 
 
 def migrate_passwords():
