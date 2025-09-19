@@ -93,10 +93,10 @@ def ensure_database_exists():
 
 def ensure_admin_wizard(force: bool = False):
     """Create an admin if none exists.
-    - If running interactively (tty), prompt the user.
-    - If non-interactive, create a temporary admin with env/defaults and log the credentials.
+    - If ADMIN_WIZARD_MODE=interactive and TTY available → prompt the user.
+    - Otherwise, create a temporary admin with env/defaults and log the credentials.
     """
-    import sys
+    import sys, os
     # Ensure schema first
     ensure_employee_schema()
 
@@ -107,13 +107,16 @@ def ensure_admin_wizard(force: bool = False):
     if not force and admin_count > 0:
         cur.close(); conn.close(); return
 
-    # If interactive terminal, run wizard
+    # Decide mode
+    mode = (os.getenv("ADMIN_WIZARD_MODE", "auto") or "auto").lower().strip()
     try:
         is_tty = sys.stdin is not None and sys.stdin.isatty()
     except Exception:
         is_tty = False
 
-    if is_tty:
+    should_prompt = (mode == "interactive" and is_tty)
+
+    if should_prompt:
         print("There is no admin user. Please create an admin employee.")
         while True:
             full_name = input("Admin Full Name: ").strip()
@@ -151,8 +154,7 @@ def ensure_admin_wizard(force: bool = False):
             print("Administrator employee created successfully.")
             cur.close(); conn.close(); return
 
-    # Non-interactive fallback: create a temporary admin and log credentials
-    import os
+    # Non-interactive path: create a temporary admin and log credentials
     full_name = os.getenv("DEFAULT_ADMIN_NAME", "Admin User")
     national_id = os.getenv("DEFAULT_ADMIN_NID", "9999999999")
     password = os.getenv("DEFAULT_ADMIN_PASSWORD")
