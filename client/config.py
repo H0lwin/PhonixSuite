@@ -40,6 +40,12 @@ def get_base_url() -> str:
             exe_json = _read_json_base(os.path.join(os.path.dirname(exe), "config.json"))
             if exe_json:
                 return exe_json.rstrip("/")
+        # 2b) config.json embedded inside one-file bundle (sys._MEIPASS)
+        bundle_dir = getattr(sys, "_MEIPASS", None)
+        if bundle_dir:
+            bundle_json = _read_json_base(os.path.join(bundle_dir, "config.json"))
+            if bundle_json:
+                return bundle_json.rstrip("/")
     except Exception:
         pass
 
