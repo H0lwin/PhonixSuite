@@ -261,7 +261,8 @@ def api_client_logs():
 
 # ----- Bootstrapping and logging -----
 
-def start_server():
+def start_server(skip_admin_wizard: bool = True):
+    """Initialize database and schemas. In production, skip interactive admin wizard by default."""
     ensure_database_exists()
     # Ensure all module schemas
     ensure_employee_schema()
@@ -281,7 +282,9 @@ def start_server():
             app.logger.info("Auth tokens cleanup: removed %s expired tokens", removed)
     except Exception:
         pass
-    ensure_admin_wizard()
+    # Avoid interactive prompts in production unless explicitly requested
+    if not skip_admin_wizard:
+        ensure_admin_wizard()
 
 
 def run_create_admin(force: bool = False):
@@ -436,6 +439,9 @@ if __name__ == "__main__":
     parser.add_argument("--migrate-passwords", action="store_true", help="Hash existing plain-text passwords with bcrypt")
     parser.add_argument("--backfill-creditors", action="store_true", help="Create creditors for already purchased loans that don't have creditors")
     parser.add_argument("--backfill-creditor-metadata", action="store_true", help="Populate missing creditor metadata from related loans")
+    parser.add_argument("--host", default=os.getenv("HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "5000")))
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode (development only)")
     args = parser.parse_args()
 
     configure_logging()
@@ -448,8 +454,6 @@ if __name__ == "__main__":
     elif args.backfill_creditor_metadata:
         backfill_creditor_metadata()
     else:
-        start_server()
-        # Bind to all interfaces for LAN access
-        # Respect HOST/PORT env vars for deployment; default remains dev-friendly
-        from config import Config
-        app.run(host=os.getenv("HOST", Config.HOST), port=int(os.getenv("PORT", Config.PORT)), debug=Config.DEBUG)
+        # Development runner only; do not use in production
+        start_server(skip_admin_wizard=True)
+        app.run(host=args.host, port=args.port, debug=args.debug)

@@ -3,7 +3,8 @@ import os
 
 
 class Config:
-    DEBUG = True
+    # Default to production-safe: DEBUG off unless explicitly enabled
+    DEBUG = os.getenv("DEBUG", os.getenv("FLASK_DEBUG", "0")).lower() in ("1", "true", "yes", "on")
     HOST = os.getenv("HOST", "127.0.0.1")
     PORT = int(os.getenv("PORT", "5000"))
 
