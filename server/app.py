@@ -155,6 +155,11 @@ def ensure_admin_wizard(force: bool = False):
 
 from utils.auth import issue_token, revoke_token, require_auth, require_admin
 
+# Public health-check (no auth)
+@app.get("/health")
+def health():
+    return jsonify({"status": "ok"}), 200
+
 
 @app.post("/api/auth/login")
 def api_login():
