@@ -76,9 +76,11 @@ class پنجره_داشبورد(QWidget):
 
         # Heartbeat timer: keeps attendance session alive and crash-safe
         self._heartbeat_timer = QTimer(self)
-        self._heartbeat_timer.setInterval(60 * 1000)  # every 60s
+        self._heartbeat_timer.setInterval(30 * 1000)  # every 30s for higher reliability
         self._heartbeat_timer.timeout.connect(self._send_heartbeat)
         self._heartbeat_timer.start()
+        # Send an immediate heartbeat after login to create/refresh session promptly
+        self._send_heartbeat()
 
         # Two-column layout: right sidebar (navigation), left content stack
         root = QHBoxLayout()
@@ -251,6 +253,12 @@ class پنجره_داشبورد(QWidget):
         except Exception:
             pass
         
+        # Final heartbeat to capture last activity if possible
+        try:
+            api_client.post_json("/api/attendance/heartbeat", {}, timeout=2)
+        except Exception:
+            pass
+
         # Auto check-out on logout with shorter timeout to prevent hanging
         try:
             api_client.post_json("/api/attendance/check-out", {}, timeout=2)
@@ -308,6 +316,32 @@ class پنجره_داشبورد(QWidget):
             api_client.post_json("/api/attendance/heartbeat", {}, timeout=2)
         except Exception:
             # do not spam logs; heartbeat is best-effort
+            pass
+
+    def closeEvent(self, event):
+        """Ensure we attempt to persist last activity on window close (power loss safe best-effort)."""
+        try:
+            # Stop timers to avoid re-entrancy
+            if hasattr(self, "_heartbeat_timer"):
+                self._heartbeat_timer.stop()
+        except Exception:
+            pass
+        try:
+            from client.services import api_client
+            # Try a quick heartbeat then checkout
+            try:
+                api_client.post_json("/api/attendance/heartbeat", {}, timeout=1)
+            except Exception:
+                pass
+            try:
+                api_client.post_json("/api/attendance/check-out", {}, timeout=1)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
+            super().closeEvent(event)
+        except Exception:
             pass
     
     def _build_employee_overview(self, display_name: str) -> QWidget:
@@ -748,7 +782,7 @@ class پنجره_داشبورد(QWidget):
             r = api_client.get(API_EMP_CREATE)
             data = r.json()
         except Exception:
-            self.lbl_users.setText("بارگذاری لیست کاربران ناموفق بود.")
+            self.lbl_status.setText("بارگذاری لیست کاربران ناموفق بود.")
             return
         if data.get("status") == "success":
             items = data.get("items", [])

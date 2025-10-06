@@ -191,7 +191,9 @@ def ensure_admin_wizard(force: bool = False, prefer_interactive: bool = False):
     )
     conn.commit()
     try:
-        msg = f"Temporary admin created (non-interactive): name='{full_name}', national_id='{national_id}', password='{password}'"
+        # Do not print or log plaintext passwords
+        masked_nid = national_id[:3] + "******" + national_id[-1:] if len(national_id) >= 4 else "****"
+        msg = f"Temporary admin created (non-interactive): name='{full_name}', national_id='{masked_nid}'. Password was generated but is NOT logged."
         print(msg)
         try:
             app.logger.warning(msg)
